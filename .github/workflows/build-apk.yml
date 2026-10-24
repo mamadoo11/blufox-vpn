@@ -1,0 +1,111 @@
+name: BluFox VPN APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-apk.yml'
+      - 'README.md'
+      - 'blufox_patch.py'
+      - 'free-servers-manifest.json'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout BluFox build configuration
+        uses: actions/checkout@v4
+
+      - name: Checkout upstream VPN engine app (WARP fixes, LxBox v2.25.17)
+        run: |
+          git clone --filter=blob:none https://github.com/Leadaxe/LxBox.git upstream
+          git -C upstream checkout b64ea6206ad07ed79efeac3c6f92a2b2c0bbf58f
+          git -C upstream log -1 --oneline
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Read pinned Flutter version
+        id: flutter-version
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < upstream/app/android/flutter.version)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
+          cache: true
+          cache-dependency-path: upstream/app/pubspec.lock
+
+      - name: Apply BluFox branding and redesigned home screen
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("upstream/app/android/app/src/main/res/values/strings.xml")
+          s = p.read_text()
+          old = '<string name="app_name" translatable="false">L×Box</string>'
+          new = '<string name="app_name" translatable="false">BluFox VPN</string>'
+          if old not in s:
+              raise SystemExit("Could not find expected launcher label; stopping safely.")
+          p.write_text(s.replace(old, new, 1))
+          PY
+          cd upstream
+          python3 ../blufox_patch.py
+
+      - name: Set unique BluFox Android application ID
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("upstream/app/android/app/build.gradle")
+          if not p.exists():
+              p = Path("upstream/app/android/app/build.gradle.kts")
+          if not p.exists():
+              raise SystemExit("Android app Gradle file not found; stopping safely")
+          s = p.read_text()
+          updated, count = re.subn(r'(applicationId\\s*[=(]?\\s*["\\'])[^"\\']+(["\\'])', r'\\g<1>com.blufox.vpn\\2', s, count=1)
+          if count != 1:
+              raise SystemExit("Could not safely set unique applicationId")
+          p.write_text(updated)
+          print("BluFox applicationId set to com.blufox.vpn")
+          PY
+
+      - name: Build release APK
+        working-directory: upstream
+        env:
+          LXBOX_ABI_FILTER: arm64-v8a
+        run: |
+          chmod +x scripts/build-local-apk.sh scripts/fetch-libbox.sh
+          ./scripts/build-local-apk.sh
+
+      - name: Locate APK
+        id: apk
+        working-directory: upstream
+        shell: bash
+        run: |
+          APK="$(find app/build -type f -name '*arm64-v8a-release.apk' -o -type f -name 'app-release.apk' | head -n 1)"
+          if [ -z "$APK" ]; then
+            echo "APK not found. Build output follows:"
+            find app/build -type f -name '*.apk' -print || true
+            exit 1
+          fi
+          mkdir -p ../deliverables
+          cp "$APK" ../deliverables/BluFox-VPN-arm64.apk
+          echo "path=deliverables/BluFox-VPN-arm64.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BluFox-VPN-APK
+          path: deliverables/BluFox-VPN-arm64.apk
+          if-no-files-found: error
+          retention-days: 14
