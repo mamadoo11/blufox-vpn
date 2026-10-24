@@ -72,11 +72,14 @@ jobs:
           if not p.exists():
               raise SystemExit("Android app Gradle file not found; stopping safely")
           s = p.read_text()
-          updated, count = re.subn(r'applicationId\s+["\'][^"\']+["\']', 'applicationId "com.blufox.vpn"', s, count=1)
+          updated, count = re.subn(r'applicationId\s*(?:=\s*)?["\'][^"\']+["\']', lambda m: 'applicationId = "com.blufox.vpn"' if '=' in m.group(0) else 'applicationId "com.blufox.vpn"', s, count=1)
           if count != 1:
-              raise SystemExit("Could not safely set unique applicationId")
+              print("No applicationId declaration found; checking namespace instead")
+              updated, count = re.subn(r'namespace\s*(?:=\s*)?["\'][^"\']+["\']', lambda m: 'namespace = "com.blufox.vpn"' if '=' in m.group(0) else 'namespace "com.blufox.vpn"', s, count=1)
+          if count != 1:
+              raise SystemExit("Could not safely set applicationId or namespace")
           p.write_text(updated)
-          print("BluFox applicationId set to com.blufox.vpn")
+          print("BluFox Android identifier updated")
           PY
 
       - name: Build release APK
