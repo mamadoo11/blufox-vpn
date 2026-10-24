@@ -72,7 +72,7 @@ jobs:
           if not p.exists():
               raise SystemExit("Android app Gradle file not found; stopping safely")
           s = p.read_text()
-          updated, count = re.subn(r'(applicationId\\s*[=(]?\\s*["\\'])[^"\\']+(["\\'])', r'\\g<1>com.blufox.vpn\\2', s, count=1)
+          updated, count = re.subn(r'applicationId\s+["\'][^"\']+["\']', 'applicationId "com.blufox.vpn"', s, count=1)
           if count != 1:
               raise SystemExit("Could not safely set unique applicationId")
           p.write_text(updated)
