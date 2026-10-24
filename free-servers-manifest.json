@@ -1,0 +1,20 @@
+{
+  "attribution": {
+    "text": "Free public configurations from Alirewa/V2ray-Configs. Public servers can be slow, unavailable, or untrusted.",
+    "link": "https://github.com/Alirewa/V2ray-Configs"
+  },
+  "lists": [
+    {
+      "source": "https://raw.githubusercontent.com/mamadoo11/blufox-vpn/main/free-configs/group-1.txt"
+    },
+    {
+      "source": "https://raw.githubusercontent.com/mamadoo11/blufox-vpn/main/free-configs/group-2.txt"
+    },
+    {
+      "source": "https://raw.githubusercontent.com/mamadoo11/blufox-vpn/main/free-configs/group-3.txt"
+    },
+    {
+      "source": "https://raw.githubusercontent.com/mamadoo11/blufox-vpn/main/free-configs/group-4.txt"
+    }
+  ]
+}
