@@ -473,7 +473,7 @@ private fun ServersScreen(onConnect: (String, String) -> Unit) {
             }
         }
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 20.dp)
         ) {
@@ -489,9 +489,9 @@ private fun ServersScreen(onConnect: (String, String) -> Unit) {
                                 Text(server.country, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                 Text(server.ip, color = Muted, fontSize = 11.sp)
                             }
-                            Text(if (server.pingMs == Long.MAX_VALUE) "—" else "\${server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
+                            Text(if (server.pingMs == Long.MAX_VALUE) "—" else "${server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
                         }
-                        Text("سرعت اعلامی: \${server.speedLabel}   •   کاربران: \${server.sessions}", color = Muted, fontSize = 11.sp)
+                        Text("سرعت اعلامی: ${server.speedLabel}   •   کاربران: ${server.sessions}", color = Muted, fontSize = 11.sp)
                         Button(
                             onClick = {
                                 try {
