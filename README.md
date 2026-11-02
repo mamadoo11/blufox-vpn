@@ -1,16 +1,30 @@
 # BluFox VPN
 
-BluFox VPN is a separate Android VPN client project based on the open-source LxBox engine. It is developed independently from CloudFox VPN so the existing CloudFox repository and APK remain untouched.
+نسخه جدید BluFox VPN — کلاینت اندروید مستقل با رابط فارسی و راست‌به‌چپ.
 
-## Design direction
-- Premium dark navy interface with electric blue and cyan accents
-- Clear connection status and large connect/disconnect control
-- Upload/download traffic indicators
-- Separate server groups and ping/connection testing where supported by the engine
-- Separate Android application ID so BluFox can coexist with CloudFox
+## وضعیت فعلی
 
-## Build status
-This repository is the separate BluFox project scaffold. The first build workflow will be used to validate the upstream engine and branding. Features and connection behavior must be tested on a real Android device before being described as working.
+این مخزن از نو به یک پروژه Native Android با Kotlin و Jetpack Compose تبدیل شده است.
 
-## Upstream and license
-Based on [Leadaxe/LxBox](https://github.com/Leadaxe/LxBox). Review upstream GPL-3.0 license and notices before redistributing modified builds. Free public server configurations may be unreliable and should not be treated as trusted.
+**مرحله ۱:** اسکلت اپلیکیشن، هویت بصری Dark Premium، نشان Orbit، چهار بخش اصلی و ساخت خودکار APK آزمایشی.
+
+**توجه:** در این مرحله موتور VPN به برنامه متصل نشده است. دکمه اتصال صرفاً وضعیت مرحله توسعه را توضیح می‌دهد و اتصال واقعی ایجاد نمی‌کند. هیچ سرور آزمایشی یا پینگ ساختگی به‌عنوان سرور سالم نمایش داده نمی‌شود.
+
+## ساخت APK
+
+از بخش Actions در GitHub، گردش کار **Build BluFox Android APK** را اجرا کن. فایل APK آزمایشی در خروجی workflow قرار می‌گیرد.
+
+## مسیر توسعه
+
+1. اسکلت Native و رابط کاربری
+2. لایه مدیریت سرورها و تست واقعی دسترس‌پذیری
+3. افزودن موتورهای اتصال با رعایت مجوزها
+4. اتصال واقعی، سنجش سلامت تونل و تست روی دستگاه
+
+## حریم خصوصی و امنیت
+
+کانفیگ‌های عمومی رایگان ممکن است ناپایدار یا غیرقابل اعتماد باشند. تا زمان بررسی منبع و سیاست نگهداری لاگ، اطلاعات حساس را از طریق سرورهای عمومی عبور نده.
+
+## مجوز
+
+GPL-3.0-or-later. متن مجوز در فایل LICENSE قرار دارد.
