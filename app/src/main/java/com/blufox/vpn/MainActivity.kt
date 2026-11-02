@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -63,6 +64,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,6 +76,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
 
 private val Night = Color(0xFF07111F)
 private val Panel = Color(0xFF101F33)
@@ -105,7 +108,8 @@ class MainActivity : ComponentActivity() {
             BluFoxApp(
                 vpnState = vpnState,
                 onConnect = ::prepareConnection,
-                onDisconnect = ::disconnect
+                onDisconnect = ::disconnect,
+                onConnectConfig = ::prepareConfig
             )
         }
     }
@@ -113,16 +117,20 @@ class MainActivity : ComponentActivity() {
     private fun prepareConnection(link: String) {
         try {
             val profile = VlessConfigBuilder.fromShareLink(link)
-            pendingConfigJson = profile.configJson
-            pendingServerName = profile.name
-            val permissionIntent = VpnService.prepare(this)
-            if (permissionIntent != null) {
-                vpnPermissionLauncher.launch(permissionIntent)
-            } else {
-                startPendingVpn()
-            }
+            prepareConfig(profile.configJson, profile.name)
         } catch (error: Exception) {
             VpnRuntime.update(VpnStatus.ERROR, message = error.message ?: "لینک سرور قابل خواندن نیست.")
+        }
+    }
+
+    private fun prepareConfig(configJson: String, name: String) {
+        pendingConfigJson = configJson
+        pendingServerName = name
+        val permissionIntent = VpnService.prepare(this)
+        if (permissionIntent != null) {
+            vpnPermissionLauncher.launch(permissionIntent)
+        } else {
+            startPendingVpn()
         }
     }
 
@@ -142,7 +150,12 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun BluFoxApp(vpnState: VpnUiState, onConnect: (String) -> Unit, onDisconnect: () -> Unit) {
+private fun BluFoxApp(
+    vpnState: VpnUiState,
+    onConnect: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    onConnectConfig: (String, String) -> Unit
+) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var showConfigDialog by remember { mutableStateOf(false) }
     var configLink by remember { mutableStateOf("") }
@@ -198,7 +211,7 @@ private fun BluFoxApp(vpnState: VpnUiState, onConnect: (String) -> Unit, onDisco
                         onDisconnect = onDisconnect,
                         onServers = { selectedTab = 1 }
                     )
-                    1 -> ServersScreen()
+                    1 -> ServersScreen(onConnect = onConnectConfig)
                     2 -> ToolsScreen()
                     else -> SettingsScreen()
                 }
@@ -409,19 +422,89 @@ private fun EmptyServerCard() {
 }
 
 @Composable
-private fun ServersScreen() {
-    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("سرورها", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        Text("در این نسخه، لینک VLESS را از صفحه خانه وارد کن.", color = Muted)
-        Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
-            Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Outlined.Dns, contentDescription = null, tint = Cyan, modifier = Modifier.size(38.dp))
-                Spacer(Modifier.height(12.dp))
-                Text("مدیریت سرورها در حال آماده‌سازی است", fontWeight = FontWeight.Bold)
-                Text(
-                    "اتصال واقعی از موتور sing-box استفاده می‌کند؛ فهرست سرور و تست خودکار مرحله بعد است.",
-                    color = Muted, textAlign = TextAlign.Center, fontSize = 12.sp
-                )
+private fun ServersScreen(onConnect: (String, String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val servers = remember { androidx.compose.runtime.mutableStateListOf<VpnGateServer>() }
+    var loading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("سرورهای رایگان", fontSize = 25.sp, fontWeight = FontWeight.Black)
+        Text("فهرست عمومی VPN Gate؛ سرورها ممکن است شلوغ یا موقتاً قطع باشند.", color = Muted, fontSize = 12.sp)
+        Button(
+            onClick = {
+                scope.launch {
+                    loading = true
+                    errorMessage = ""
+                    try {
+                        val found = VpnGateRepository.fetchServers(40)
+                        servers.clear()
+                        servers.addAll(found)
+                        if (found.isEmpty()) errorMessage = "فعلاً سروری از منبع دریافت نشد. دوباره تلاش کن."
+                    } catch (error: Exception) {
+                        errorMessage = error.message ?: "دریافت فهرست سرورها ناموفق بود."
+                    } finally {
+                        loading = false
+                    }
+                }
+            },
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Icon(Icons.Outlined.Search, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (loading) "در حال دریافت سرورها…" else "جست‌وجوی سرورهای رایگان")
+        }
+        if (errorMessage.isNotBlank()) {
+            Text(errorMessage, color = Red, fontSize = 12.sp)
+        }
+        if (servers.isEmpty() && !loading && errorMessage.isBlank()) {
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Outlined.Dns, contentDescription = null, tint = Cyan, modifier = Modifier.size(36.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text("هنوز سروری دریافت نشده", fontWeight = FontWeight.Bold)
+                    Text("برای دریافت فهرست زنده، دکمه جست‌وجو را بزن.", color = Muted, fontSize = 12.sp)
+                }
+            }
+        }
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 20.dp)
+        ) {
+            items(servers, key = { it.ip + ":" + it.countryCode }) { server ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Panel),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, Color(0xFF203750))
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(server.country, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text(server.ip, color = Muted, fontSize = 11.sp)
+                            }
+                            Text(if (server.pingMs == Long.MAX_VALUE) "—" else "${server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
+                        }
+                        Text("سرعت اعلامی: ${server.speedLabel}   •   کاربران: ${server.sessions}", color = Muted, fontSize = 11.sp)
+                        Button(
+                            onClick = {
+                                try {
+                                    onConnect(VpnGateConfigBuilder.build(server), server.displayName)
+                                } catch (error: Exception) {
+                                    errorMessage = error.message ?: "تنظیمات این سرور پشتیبانی نمی‌شود."
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                            shape = RoundedCornerShape(13.dp)
+                        ) { Text("اتصال به این سرور") }
+                    }
+                }
             }
         }
     }
@@ -457,7 +540,7 @@ private fun SettingsScreen() {
         Text("تنظیمات", fontSize = 25.sp, fontWeight = FontWeight.Black)
         ToolRow(Icons.Filled.Tune, "تنظیمات اتصال", "تنظیمات موتور sing-box")
         ToolRow(Icons.Outlined.Shield, "حریم خصوصی", "سرورهای عمومی ممکن است قابل اعتماد نباشند")
-        ToolRow(Icons.Outlined.Settings, "درباره BluFox", "نسخه آزمایشی 0.2.0")
+        ToolRow(Icons.Outlined.Settings, "درباره BluFox", "نسخه آزمایشی 0.3.0")
         Spacer(Modifier.height(4.dp))
         Text("BluFox VPN", color = Cyan, fontWeight = FontWeight.Bold)
         Text("نسخه مستقل؛ CloudFox بدون تغییر باقی مانده است.", color = Muted, fontSize = 12.sp)
