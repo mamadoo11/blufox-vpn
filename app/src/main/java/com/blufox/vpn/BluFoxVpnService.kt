@@ -146,7 +146,6 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
   tunFd=pfd
   return pfd.fd
  }
- override fun useProcFS():Boolean=false
  override fun findConnectionOwner(ipProtocol:Int,sourceAddress:String?,sourcePort:Int,destinationAddress:String?,destinationPort:Int):ConnectionOwner=error("Connection owner lookup is not enabled.")
  override fun startDefaultInterfaceMonitor(listener:InterfaceUpdateListener?)=Unit
  override fun closeDefaultInterfaceMonitor(listener:InterfaceUpdateListener?)=Unit
