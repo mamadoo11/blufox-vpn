@@ -33,7 +33,7 @@ object VpnGateConfigBuilder {
         }
 
         val ca = inlineBlock("ca")
-        val tlsAuth = inlineBlock("tls-auth") ?: inlineBlock("key")
+        val tlsAuth = inlineBlock("tls-auth")
         val tlsCrypt = inlineBlock("tls-crypt")
         require(!ca.isNullOrBlank()) { "گواهی CA در فایل سرور وجود ندارد؛ این سرور قابل تبدیل نیست." }
 
