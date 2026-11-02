@@ -432,7 +432,7 @@ private fun ToolsScreen() {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("ابزارها", fontSize = 25.sp, fontWeight = FontWeight.Black)
         ToolRow(Icons.Outlined.Search, "آزمایش سرور", "در مرحله بعد اضافه می‌شود")
-        ToolRow(Icons.Outlined.Speed, "آزمون سرعت", "بعد از اتصال و دریافت آمار")
+        ToolRow(Icons.Filled.Speed, "آزمون سرعت", "بعد از اتصال و دریافت آمار")
         ToolRow(Icons.Outlined.Lock, "بررسی امنیت", "وضعیت TLS و REALITY از لینک سرور")
     }
 }
@@ -455,7 +455,7 @@ private fun ToolRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title
 private fun SettingsScreen() {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("تنظیمات", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        ToolRow(Icons.Outlined.Tune, "تنظیمات اتصال", "تنظیمات موتور sing-box")
+        ToolRow(Icons.Filled.Tune, "تنظیمات اتصال", "تنظیمات موتور sing-box")
         ToolRow(Icons.Outlined.Shield, "حریم خصوصی", "سرورهای عمومی ممکن است قابل اعتماد نباشند")
         ToolRow(Icons.Outlined.Settings, "درباره BluFox", "نسخه آزمایشی 0.2.0")
         Spacer(Modifier.height(4.dp))
