@@ -13,15 +13,15 @@ data class VpnGateServer(
     val country: String,
     val countryCode: String,
     val pingMs: Long,
-    val speedBytes: Long,
+    val speedBps: Long,
     val sessions: Int,
     val configBase64: String
 ) {
     val displayName: String get() = "$country • $ip"
     val speedLabel: String get() = when {
-        speedBytes >= 1_000_000_000 -> String.format(Locale.US, "%.1f GB/s", speedBytes / 1_000_000_000.0)
-        speedBytes >= 1_000_000 -> String.format(Locale.US, "%.1f MB/s", speedBytes / 1_000_000.0)
-        speedBytes >= 1_000 -> String.format(Locale.US, "%.0f KB/s", speedBytes / 1_000.0)
+        speedBps >= 1_000_000_000 -> String.format(Locale.US, "%.2f Gbps", speedBps / 1_000_000_000.0)
+        speedBps >= 1_000_000 -> String.format(Locale.US, "%.1f Mbps", speedBps / 1_000_000.0)
+        speedBps >= 1_000 -> String.format(Locale.US, "%.0f Kbps", speedBps / 1_000.0)
         else -> "نامشخص"
     }
 }
@@ -73,7 +73,7 @@ object VpnGateRepository {
                 }
                 result
             }
-            rows.sortedWith(compareBy<VpnGateServer> { it.pingMs }.thenByDescending { it.speedBytes })
+            rows.sortedWith(compareBy<VpnGateServer> { it.pingMs }.thenByDescending { it.speedBps })
                 .take(limit)
         } finally {
             connection.disconnect()
