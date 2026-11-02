@@ -87,12 +87,21 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
  }
 
  private fun verifyTunnelTraffic():String {
-  val trace=requestText("https://www.cloudflare.com/cdn-cgi/trace")
-  val ip=trace.lineSequence().firstOrNull{it.startsWith("ip=")}?.substringAfter("=")?.trim()
-  if(!ip.isNullOrBlank())return ip
-  val fallback=requestText("https://api.ipify.org").trim()
-  require(fallback.matches(Regex("[0-9a-fA-F:.]{3,45}"))){"تونل اجرا شد، اما عبور واقعی ترافیک تأیید نشد. سرور ممکن است قطع یا تنظیمات آن نادرست باشد."}
-  return fallback
+  var lastError:Throwable?=null
+  repeat(3) { attempt ->
+   try {
+    val trace=requestText("https://www.cloudflare.com/cdn-cgi/trace")
+    val ip=trace.lineSequence().firstOrNull{it.startsWith("ip=")}?.substringAfter("=")?.trim()
+    if(!ip.isNullOrBlank())return ip
+    val fallback=requestText("https://api.ipify.org").trim()
+    require(fallback.matches(Regex("[0-9a-fA-F:.]{3,45}"))){"پاسخ IP خروجی معتبر نیست."}
+    return fallback
+   } catch(error:Throwable) {
+    lastError=error
+    if(attempt<2)Thread.sleep(2500)
+   }
+  }
+  throw IllegalStateException("اتصال تونل شروع شد، اما عبور واقعی اینترنت تأیید نشد. ممکن است سرور عمومی از دسترس خارج شده باشد.",lastError)
  }
 
  private fun requestText(address:String):String {
