@@ -51,6 +51,9 @@ object VpnGateConfigBuilder {
             .put("ping_restart", "90s")
 
         val tls = JSONObject().put("certificate", JSONArray().put(ca))
+        if (directives.any { it.equals("remote-cert-tls server", true) }) {
+            tls.put("remote_certificate_tls", "server")
+        }
         if (tlsCrypt != null) {
             tls.put(
                 "control_wrap",
@@ -59,13 +62,14 @@ object VpnGateConfigBuilder {
         } else if (tlsAuth != null) {
             val direction = directives.firstOrNull { it.startsWith("key-direction ", true) }
                 ?.substringAfter(' ')?.trim()
-            tls.put(
-                "control_wrap",
-                JSONObject()
-                    .put("type", "tls_auth")
-                    .put("key", JSONArray().put(tlsAuth))
-                    .put("direction", if (direction == "0") "server" else "client")
-            )
+            val controlWrap = JSONObject()
+                .put("type", "tls_auth")
+                .put("key", JSONArray().put(tlsAuth))
+            when (direction) {
+                "0" -> controlWrap.put("direction", "server")
+                "1" -> controlWrap.put("direction", "client")
+            }
+            tls.put("control_wrap", controlWrap)
         }
         endpoint.put("tls", tls)
 
@@ -91,8 +95,24 @@ object VpnGateConfigBuilder {
             .put("stack", "mixed")
             .put("sniff", true)
 
+        val dns = JSONObject()
+            .put(
+                "servers",
+                JSONArray().put(
+                    JSONObject()
+                        .put("type", "openvpn")
+                        .put("tag", "ovpn-dns")
+                        .put("endpoint", "proxy")
+                        .put("accept_default_resolvers", true)
+                        .put("accept_search_domain", true)
+                )
+            )
+            .put("final", "ovpn-dns")
+            .put("strategy", "prefer_ipv4")
+
         val config = JSONObject()
             .put("log", JSONObject().put("level", "info"))
+            .put("dns", dns)
             .put("inbounds", JSONArray().put(tun))
             .put("endpoints", JSONArray().put(endpoint))
             .put("outbounds", JSONArray().put(JSONObject().put("type", "direct").put("tag", "direct")))
