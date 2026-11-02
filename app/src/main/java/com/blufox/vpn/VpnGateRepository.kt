@@ -61,7 +61,7 @@ object VpnGateRepository {
                                         country = country,
                                         countryCode = code,
                                         pingMs = ping,
-                                        speedBytes = speed,
+                                        speedBps = speed,
                                         sessions = sessions,
                                         configBase64 = encoded
                                     )
