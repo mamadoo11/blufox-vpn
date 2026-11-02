@@ -540,7 +540,7 @@ private fun SettingsScreen() {
         Text("تنظیمات", fontSize = 25.sp, fontWeight = FontWeight.Black)
         ToolRow(Icons.Filled.Tune, "تنظیمات اتصال", "تنظیمات موتور sing-box")
         ToolRow(Icons.Outlined.Shield, "حریم خصوصی", "سرورهای عمومی ممکن است قابل اعتماد نباشند")
-        ToolRow(Icons.Outlined.Settings, "درباره BluFox", "نسخه آزمایشی 0.2.0")
+        ToolRow(Icons.Outlined.Settings, "درباره BluFox", "نسخه آزمایشی 0.3.0")
         Spacer(Modifier.height(4.dp))
         Text("BluFox VPN", color = Cyan, fontWeight = FontWeight.Bold)
         Text("نسخه مستقل؛ CloudFox بدون تغییر باقی مانده است.", color = Muted, fontSize = 12.sp)
