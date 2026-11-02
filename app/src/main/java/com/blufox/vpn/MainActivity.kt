@@ -104,7 +104,6 @@ private fun BluFoxApp() {
     ) {
         Scaffold(
             containerColor = Night,
-            contentWindowInsets = WindowInsets(0),
             bottomBar = {
                 NavigationBar(
                     containerColor = Color(0xFF0B192A),
