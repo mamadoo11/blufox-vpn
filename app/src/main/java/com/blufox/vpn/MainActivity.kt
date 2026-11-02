@@ -1,8 +1,11 @@
 package com.blufox.vpn
 
+import android.content.Intent
+import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -27,7 +30,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Bolt
@@ -49,13 +51,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +73,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 
 private val Night = Color(0xFF07111F)
 private val Panel = Color(0xFF101F33)
@@ -78,18 +82,70 @@ private val Electric = Color(0xFF398BFF)
 private val Cyan = Color(0xFF35D6E8)
 private val Muted = Color(0xFF91A4BC)
 private val Green = Color(0xFF25C58A)
+private val Amber = Color(0xFFFFB454)
+private val Red = Color(0xFFFF667A)
 
 class MainActivity : ComponentActivity() {
+    private var pendingConfigJson: String? = null
+    private var pendingServerName = ""
+
+    private val vpnPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                startPendingVpn()
+            } else {
+                VpnRuntime.update(VpnStatus.ERROR, message = "اجازه ایجاد VPN داده نشد.")
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { BluFoxApp() }
+        setContent {
+            val vpnState by VpnRuntime.state.collectAsState()
+            BluFoxApp(
+                vpnState = vpnState,
+                onConnect = ::prepareConnection,
+                onDisconnect = ::disconnect
+            )
+        }
+    }
+
+    private fun prepareConnection(link: String) {
+        try {
+            val profile = VlessConfigBuilder.fromShareLink(link)
+            pendingConfigJson = profile.configJson
+            pendingServerName = profile.name
+            val permissionIntent = VpnService.prepare(this)
+            if (permissionIntent != null) {
+                vpnPermissionLauncher.launch(permissionIntent)
+            } else {
+                startPendingVpn()
+            }
+        } catch (error: Exception) {
+            VpnRuntime.update(VpnStatus.ERROR, message = error.message ?: "لینک سرور قابل خواندن نیست.")
+        }
+    }
+
+    private fun startPendingVpn() {
+        val config = pendingConfigJson ?: return
+        val intent = Intent(this, BluFoxVpnService::class.java).apply {
+            action = BluFoxVpnService.ACTION_START
+            putExtra(BluFoxVpnService.EXTRA_CONFIG, config)
+            putExtra(BluFoxVpnService.EXTRA_NAME, pendingServerName)
+        }
+        ContextCompat.startForegroundService(this, intent)
+    }
+
+    private fun disconnect() {
+        startService(Intent(this, BluFoxVpnService::class.java).setAction(BluFoxVpnService.ACTION_STOP))
     }
 }
 
 @Composable
-private fun BluFoxApp() {
+private fun BluFoxApp(vpnState: VpnUiState, onConnect: (String) -> Unit, onDisconnect: () -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    var showEngineInfo by remember { mutableStateOf(false) }
+    var showConfigDialog by remember { mutableStateOf(false) }
+    var configLink by remember { mutableStateOf("") }
 
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -114,7 +170,7 @@ private fun BluFoxApp() {
                         Triple("خانه", Icons.Filled.Home, 0),
                         Triple("سرورها", Icons.Outlined.Public, 1),
                         Triple("ابزارها", Icons.Filled.Speed, 2),
-                        Triple("تنظیمات", Icons.Outlined.Settings, 3)
+                        Triple("تنظیمات", Icons.Filled.Tune, 3)
                     )
                     tabs.forEach { (label, icon, index) ->
                         NavigationBarItem(
@@ -134,13 +190,14 @@ private fun BluFoxApp() {
                 }
             }
         ) { padding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
+            Box(Modifier.fillMaxSize().padding(padding)) {
                 when (selectedTab) {
-                    0 -> HomeScreen(onConnect = { showEngineInfo = true }, onServers = { selectedTab = 1 })
+                    0 -> HomeScreen(
+                        vpnState = vpnState,
+                        onConnect = { showConfigDialog = true },
+                        onDisconnect = onDisconnect,
+                        onServers = { selectedTab = 1 }
+                    )
                     1 -> ServersScreen()
                     2 -> ToolsScreen()
                     else -> SettingsScreen()
@@ -148,18 +205,40 @@ private fun BluFoxApp() {
             }
         }
 
-        if (showEngineInfo) {
+        if (showConfigDialog) {
             AlertDialog(
-                onDismissRequest = { showEngineInfo = false },
+                onDismissRequest = { showConfigDialog = false },
                 containerColor = Panel,
-                title = { Text("موتور اتصال هنوز اضافه نشده") },
+                title = { Text("افزودن سرور VLESS") },
                 text = {
-                    Text(
-                        "این نسخه، اسکلت اولیه و رابط کاربری BluFox است. اتصال واقعی VPN در مرحله بعد و پس از اضافه‌شدن موتور اتصال پیاده‌سازی و روی گوشی آزمایش می‌شود."
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("لینک سرور VLESS را اینجا جای‌گذاری کن. اطلاعات سرور روی گوشی پردازش می‌شود.")
+                        OutlinedTextField(
+                            value = configLink,
+                            onValueChange = { configLink = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("لینک vless://") },
+                            minLines = 3,
+                            maxLines = 5
+                        )
+                        Text(
+                            "فعلاً VLESS با TLS یا REALITY و انتقال TCP، WebSocket یا gRPC پشتیبانی می‌شود.",
+                            color = Muted,
+                            fontSize = 11.sp
+                        )
+                    }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showEngineInfo = false }) { Text("متوجه شدم") }
+                    TextButton(
+                        enabled = configLink.trim().startsWith("vless://", true),
+                        onClick = {
+                            showConfigDialog = false
+                            onConnect(configLink)
+                        }
+                    ) { Text("اتصال") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showConfigDialog = false }) { Text("انصراف") }
                 }
             )
         }
@@ -167,7 +246,27 @@ private fun BluFoxApp() {
 }
 
 @Composable
-private fun HomeScreen(onConnect: () -> Unit, onServers: () -> Unit) {
+private fun HomeScreen(
+    vpnState: VpnUiState,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onServers: () -> Unit
+) {
+    val connected = vpnState.status == VpnStatus.CONNECTED
+    val connecting = vpnState.status == VpnStatus.CONNECTING
+    val statusColor = when (vpnState.status) {
+        VpnStatus.CONNECTED -> Green
+        VpnStatus.CONNECTING -> Amber
+        VpnStatus.ERROR -> Red
+        VpnStatus.DISCONNECTED -> Muted
+    }
+    val statusText = when (vpnState.status) {
+        VpnStatus.CONNECTED -> "متصل و ترافیک تأییدشده"
+        VpnStatus.CONNECTING -> "در حال اتصال"
+        VpnStatus.ERROR -> "خطا در اتصال"
+        VpnStatus.DISCONNECTED -> "قطع"
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -190,56 +289,71 @@ private fun HomeScreen(onConnect: () -> Unit, onServers: () -> Unit) {
         }
         item {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
+                modifier = Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(28.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF142F53), Color(0xFF10243B), Color(0xFF101B2D))
-                        )
-                    )
+                    .background(Brush.linearGradient(listOf(Color(0xFF142F53), Color(0xFF10243B), Color(0xFF101B2D))))
                     .padding(22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("وضعیت اتصال", color = Muted, fontSize = 13.sp)
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFFFFB454)))
+                    Box(Modifier.size(9.dp).clip(CircleShape).background(statusColor))
                     Spacer(Modifier.width(8.dp))
-                    Text("آماده‌به‌کار", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Text(statusText, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                }
+                if (vpnState.serverName.isNotBlank()) {
+                    Spacer(Modifier.height(5.dp))
+                    Text(vpnState.serverName, color = Muted, fontSize = 12.sp)
                 }
                 Spacer(Modifier.height(20.dp))
                 Button(
-                    onClick = onConnect,
+                    onClick = if (connected) onDisconnect else onConnect,
+                    enabled = !connecting,
                     modifier = Modifier.fillMaxWidth().height(66.dp),
                     shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Electric)
+                    colors = ButtonDefaults.buttonColors(containerColor = if (connected) Color(0xFFB33E56) else Electric)
                 ) {
                     Icon(Icons.Outlined.Bolt, contentDescription = null, modifier = Modifier.size(25.dp))
                     Spacer(Modifier.width(9.dp))
-                    Text("اتصال", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        when {
+                            connected -> "قطع اتصال"
+                            connecting -> "در حال اتصال…"
+                            else -> "افزودن سرور و اتصال"
+                        },
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-                Spacer(Modifier.height(10.dp))
-                Text("موتور VPN در مرحله توسعه است", color = Muted, fontSize = 11.sp)
+                if (vpnState.message.isNotBlank()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        vpnState.message,
+                        color = if (vpnState.status == VpnStatus.ERROR) Red else Muted,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("سرور سالم", "—", Icons.Outlined.CheckCircle, Modifier.weight(1f))
-                MetricCard("پینگ", "—", Icons.Outlined.Speed, Modifier.weight(1f))
+                MetricCard("IP خروجی VPN", vpnState.exitIp.ifBlank { "—" }, Icons.Outlined.Public, Modifier.weight(1f))
+                MetricCard("پینگ", "—", Icons.Outlined.CheckCircle, Modifier.weight(1f))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard("آپلود", "۰ KB/s", Icons.Outlined.ArrowUpward, Modifier.weight(1f))
-                MetricCard("دانلود", "۰ KB/s", Icons.Outlined.ArrowDownward, Modifier.weight(1f))
+                MetricCard("آپلود", "پس از افزودن آمار", Icons.Outlined.ArrowUpward, Modifier.weight(1f))
+                MetricCard("دانلود", "پس از افزودن آمار", Icons.Outlined.ArrowDownward, Modifier.weight(1f))
             }
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("سرورهای پیشنهادی", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Text("پس از اتصال منبع سرورها نمایش داده می‌شود", color = Muted, fontSize = 11.sp)
+                    Text("فعلاً کانفیگ خودت را وارد کن", color = Muted, fontSize = 11.sp)
                 }
                 TextButton(onClick = onServers) { Text("همه سرورها") }
             }
@@ -251,9 +365,7 @@ private fun HomeScreen(onConnect: () -> Unit, onServers: () -> Unit) {
 @Composable
 private fun OrbitMark() {
     Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(RoundedCornerShape(16.dp))
+        modifier = Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
             .background(Brush.linearGradient(listOf(Electric, Color(0xFF174A87)))),
         contentAlignment = Alignment.Center
     ) {
@@ -262,16 +374,17 @@ private fun OrbitMark() {
 }
 
 @Composable
-private fun MetricCard(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Panel)
-    ) {
+private fun MetricCard(
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
+    Card(modifier = modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
         Column(Modifier.padding(15.dp)) {
             Icon(icon, contentDescription = null, tint = Cyan, modifier = Modifier.size(20.dp))
             Spacer(Modifier.height(12.dp))
-            Text(value, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Text(title, fontSize = 11.sp, color = Muted)
         }
     }
@@ -284,15 +397,12 @@ private fun EmptyServerCard() {
         shape = RoundedCornerShape(20.dp),
         border = BorderStroke(1.dp, Color(0xFF203750))
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Cloud, contentDescription = null, tint = Muted, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("هنوز سروری بررسی نشده", fontWeight = FontWeight.SemiBold)
-                Text("برای جلوگیری از نمایش اطلاعات ساختگی، فهرست فعلاً خالی است.", color = Muted, fontSize = 11.sp)
+                Text("هنوز سروری اضافه نشده", fontWeight = FontWeight.SemiBold)
+                Text("بعد از واردکردن لینک، اینجا فهرست سرورها را مدیریت می‌کنیم.", color = Muted, fontSize = 11.sp)
             }
         }
     }
@@ -300,20 +410,16 @@ private fun EmptyServerCard() {
 
 @Composable
 private fun ServersScreen() {
-    Column(
-        Modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("سرورها", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        Text("منابع و سرورهای قابل بررسی", color = Muted)
+        Text("در این نسخه، لینک VLESS را از صفحه خانه وارد کن.", color = Muted)
         Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
             Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Outlined.Dns, contentDescription = null, tint = Cyan, modifier = Modifier.size(38.dp))
                 Spacer(Modifier.height(12.dp))
-                Text("منبع سرورها هنوز متصل نشده", fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(6.dp))
+                Text("مدیریت سرورها در حال آماده‌سازی است", fontWeight = FontWeight.Bold)
                 Text(
-                    "در مرحله بعد، دریافت دستی فهرست سرورها و آزمایش واقعی دسترس‌پذیری اضافه می‌شود.",
+                    "اتصال واقعی از موتور sing-box استفاده می‌کند؛ فهرست سرور و تست خودکار مرحله بعد است.",
                     color = Muted, textAlign = TextAlign.Center, fontSize = 12.sp
                 )
             }
@@ -325,9 +431,9 @@ private fun ServersScreen() {
 private fun ToolsScreen() {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("ابزارها", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        ToolRow(Icons.Outlined.Search, "آزمایش سرور", "در مرحله بعد فعال می‌شود")
-        ToolRow(Icons.Outlined.Speed, "آزمون سرعت", "پس از ایجاد تونل واقعی")
-        ToolRow(Icons.Outlined.Lock, "بررسی امنیت", "اطلاعات امنیتی پس از اتصال موتور")
+        ToolRow(Icons.Outlined.Search, "آزمایش سرور", "در مرحله بعد اضافه می‌شود")
+        ToolRow(Icons.Outlined.Speed, "آزمون سرعت", "بعد از اتصال و دریافت آمار")
+        ToolRow(Icons.Outlined.Lock, "بررسی امنیت", "وضعیت TLS و REALITY از لینک سرور")
     }
 }
 
@@ -349,11 +455,11 @@ private fun ToolRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title
 private fun SettingsScreen() {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("تنظیمات", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        ToolRow(Icons.Outlined.Tune, "تنظیمات اتصال", "پس از افزودن موتور VPN")
+        ToolRow(Icons.Outlined.Tune, "تنظیمات اتصال", "تنظیمات موتور sing-box")
         ToolRow(Icons.Outlined.Shield, "حریم خصوصی", "سرورهای عمومی ممکن است قابل اعتماد نباشند")
-        ToolRow(Icons.Outlined.Settings, "درباره BluFox", "نسخه آزمایشی 0.1.0")
+        ToolRow(Icons.Outlined.Settings, "درباره BluFox", "نسخه آزمایشی 0.2.0")
         Spacer(Modifier.height(4.dp))
         Text("BluFox VPN", color = Cyan, fontWeight = FontWeight.Bold)
-        Text("ساخته‌شده به‌صورت مستقل؛ بدون تغییر در CloudFox", color = Muted, fontSize = 12.sp)
+        Text("نسخه مستقل؛ CloudFox بدون تغییر باقی مانده است.", color = Muted, fontSize = 12.sp)
     }
 }
