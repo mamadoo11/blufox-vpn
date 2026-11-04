@@ -42,7 +42,7 @@ object CloudflareWarpRepository {
             .put("install_id", "")
             .put("fcm_token", "")
             .put("tos", Instant.now().toString())
-            .put("model", "Android")
+            .put("model", "PC")
             .put("type", "Android")
             .put("locale", "en_US")
             .toString()
@@ -96,7 +96,7 @@ object CloudflareWarpRepository {
         val clientId = config.optString("client_id")
         if (clientId.isNotBlank()) {
             val reserved = runCatching {
-                Base64.decode(clientId, Base64.DEFAULT).take(3)
+                Base64.decode(clientId, Base64.DEFAULT).take(3).map { it.toInt() and 0xff }
             }.getOrDefault(emptyList())
             if (reserved.size == 3) peerConfig.put("reserved", JSONArray(reserved))
         }
