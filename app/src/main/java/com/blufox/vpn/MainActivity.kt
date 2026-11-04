@@ -59,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -474,6 +475,20 @@ private fun ServersScreen(onConnect: (String, String) -> Unit) {
     var gateLoading by remember { mutableStateOf(false) }
     var warpLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        freeLoading = true
+        try {
+            val found = withContext(Dispatchers.IO) { CloudFoxFreeConfigRepository.fetch() }
+            freeConfigs.clear()
+            freeConfigs.addAll(found)
+            if (found.isEmpty()) errorMessage = "از منابع CloudFox کانفیگ سازگار دریافت نشد."
+        } catch (error: Exception) {
+            errorMessage = error.message ?: "دریافت خودکار کانفیگ‌ها ناموفق بود."
+        } finally {
+            freeLoading = false
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
