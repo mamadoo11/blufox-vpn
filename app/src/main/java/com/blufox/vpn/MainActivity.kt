@@ -567,7 +567,7 @@ private fun ServersScreen(onConnect: (String, String) -> Unit) {
         ) {
             if (freeConfigs.isNotEmpty()) {
                 item {
-                    Text("CloudFox • کانفیگ‌های عمومی (\u0024{freeConfigs.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("CloudFox • کانفیگ‌های عمومی (${freeConfigs.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
                 items(freeConfigs, key = { it.shareLink }) { profile ->
                     Card(
@@ -609,7 +609,7 @@ private fun ServersScreen(onConnect: (String, String) -> Unit) {
             }
             if (vpnGateServers.isNotEmpty()) {
                 item {
-                    Text("VPN Gate • سرورهای OpenVPN (\u0024{vpnGateServers.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("VPN Gate • سرورهای OpenVPN (${vpnGateServers.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
                 items(vpnGateServers, key = { it.ip + ":" + it.countryCode }) { server ->
                     Card(
@@ -623,9 +623,9 @@ private fun ServersScreen(onConnect: (String, String) -> Unit) {
                                     Text(server.country, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                     Text(server.ip, color = Muted, fontSize = 11.sp)
                                 }
-                                Text(if (server.pingMs == Long.MAX_VALUE) "—" else "\u0024{server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
+                                Text(if (server.pingMs == Long.MAX_VALUE) "—" else "${server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
                             }
-                            Text("سرعت اعلامی: \u0024{server.speedLabel}   •   کاربران: \u0024{server.sessions}", color = Muted, fontSize = 11.sp)
+                            Text("سرعت اعلامی: ${server.speedLabel}   •   کاربران: ${server.sessions}", color = Muted, fontSize = 11.sp)
                             Button(
                                 onClick = {
                                     try {
