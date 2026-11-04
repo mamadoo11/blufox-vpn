@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feature/vpngate-openvpn]
+    branches: [main, feature/vpngate-openvpn, feature/hybrid-outline]
     paths:
       - 'app/**'
       - '*.gradle.kts'
