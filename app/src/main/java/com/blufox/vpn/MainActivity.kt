@@ -71,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -466,85 +467,164 @@ private fun EmptyServerCard() {
 @Composable
 private fun ServersScreen(onConnect: (String, String) -> Unit) {
     val scope = rememberCoroutineScope()
-    val servers = remember { androidx.compose.runtime.mutableStateListOf<VpnGateServer>() }
-    var loading by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val freeConfigs = remember { androidx.compose.runtime.mutableStateListOf<FreeConfigProfile>() }
+    val vpnGateServers = remember { androidx.compose.runtime.mutableStateListOf<VpnGateServer>() }
+    var freeLoading by remember { mutableStateOf(false) }
+    var gateLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
     Column(
         Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("سرورهای رایگان", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        Text("فهرست عمومی VPN Gate؛ سرورها ممکن است شلوغ یا موقتاً قطع باشند.", color = Muted, fontSize = 12.sp)
-        Button(
-            onClick = {
-                scope.launch {
-                    loading = true
-                    errorMessage = ""
-                    try {
-                        val found = VpnGateRepository.fetchServers(40)
-                        servers.clear()
-                        servers.addAll(found)
-                        if (found.isEmpty()) errorMessage = "فعلاً سروری از منبع دریافت نشد. دوباره تلاش کن."
-                    } catch (error: Exception) {
-                        errorMessage = error.message ?: "دریافت فهرست سرورها ناموفق بود."
-                    } finally {
-                        loading = false
+        Text("دریافت خودکار از فهرست CloudFox و VPN Gate؛ سرورهای عمومی ممکن است ناپایدار یا ناامن باشند.", color = Muted, fontSize = 12.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = {
+                    scope.launch {
+                        freeLoading = true
+                        errorMessage = ""
+                        try {
+                            val found = withContext(Dispatchers.IO) { CloudFoxFreeConfigRepository.fetch() }
+                            freeConfigs.clear()
+                            freeConfigs.addAll(found)
+                            if (found.isEmpty()) errorMessage = "از منابع CloudFox کانفیگ سازگار دریافت نشد."
+                        } catch (error: Exception) {
+                            errorMessage = error.message ?: "دریافت کانفیگ‌های CloudFox ناموفق بود."
+                        } finally {
+                            freeLoading = false
+                        }
                     }
-                }
-            },
-            enabled = !loading,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Icon(Icons.Outlined.Search, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (loading) "در حال دریافت سرورها…" else "جست‌وجوی سرورهای رایگان")
+                },
+                enabled = !freeLoading,
+                modifier = Modifier.weight(1f).height(50.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Outlined.Cloud, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(if (freeLoading) "در حال دریافت…" else "دریافت کانفیگ‌ها")
+            }
+            Button(
+                onClick = {
+                    scope.launch {
+                        gateLoading = true
+                        errorMessage = ""
+                        try {
+                            val found = VpnGateRepository.fetchServers(40)
+                            vpnGateServers.clear()
+                            vpnGateServers.addAll(found)
+                            if (found.isEmpty()) errorMessage = "VPN Gate سروری برنگرداند."
+                        } catch (error: Exception) {
+                            errorMessage = error.message ?: "دریافت VPN Gate ناموفق بود."
+                        } finally {
+                            gateLoading = false
+                        }
+                    }
+                },
+                enabled = !gateLoading,
+                modifier = Modifier.weight(1f).height(50.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Outlined.Public, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(if (gateLoading) "در حال دریافت…" else "VPN Gate")
+            }
         }
         if (errorMessage.isNotBlank()) {
             Text(errorMessage, color = Red, fontSize = 12.sp)
-        }
-        if (servers.isEmpty() && !loading && errorMessage.isBlank()) {
-            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-                Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.Dns, contentDescription = null, tint = Cyan, modifier = Modifier.size(36.dp))
-                    Spacer(Modifier.height(10.dp))
-                    Text("هنوز سروری دریافت نشده", fontWeight = FontWeight.Bold)
-                    Text("برای دریافت فهرست زنده، دکمه جست‌وجو را بزن.", color = Muted, fontSize = 12.sp)
-                }
-            }
         }
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 20.dp)
         ) {
-            items(servers, key = { it.ip + ":" + it.countryCode }) { server ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Panel),
-                    shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.dp, Color(0xFF203750))
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(server.country, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                Text(server.ip, color = Muted, fontSize = 11.sp)
-                            }
-                            Text(if (server.pingMs == Long.MAX_VALUE) "—" else "${server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
-                        }
-                        Text("سرعت اعلامی: ${server.speedLabel}   •   کاربران: ${server.sessions}", color = Muted, fontSize = 11.sp)
-                        Button(
-                            onClick = {
-                                try {
-                                    onConnect(VpnGateConfigBuilder.build(server), server.displayName)
-                                } catch (error: Exception) {
-                                    errorMessage = error.message ?: "تنظیمات این سرور پشتیبانی نمی‌شود."
+            if (freeConfigs.isNotEmpty()) {
+                item {
+                    Text("CloudFox • کانفیگ‌های عمومی (\u0024{freeConfigs.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                items(freeConfigs, key = { it.shareLink }) { profile ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Panel),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.dp, Color(0xFF203750))
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(profile.name, fontWeight = FontWeight.Bold, maxLines = 1)
+                                    Text(profile.protocol + " • CloudFox community source", color = Muted, fontSize = 11.sp)
                                 }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(44.dp),
-                            shape = RoundedCornerShape(13.dp)
-                        ) { Text("اتصال به این سرور") }
+                                Text("عمومی", color = Amber, fontSize = 11.sp)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { onConnect(profile.configJson, profile.name) },
+                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) { Text("اتصال") }
+                                TextButton(
+                                    onClick = {
+                                        val send = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, profile.shareLink)
+                                        }
+                                        context.startActivity(Intent.createChooser(send, "اشتراک‌گذاری کانفیگ"))
+                                    }
+                                ) {
+                                    Icon(Icons.Outlined.Public, contentDescription = null)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("اشتراک")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (vpnGateServers.isNotEmpty()) {
+                item {
+                    Text("VPN Gate • سرورهای OpenVPN (\u0024{vpnGateServers.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                items(vpnGateServers, key = { it.ip + ":" + it.countryCode }) { server ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Panel),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.dp, Color(0xFF203750))
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(server.country, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                    Text(server.ip, color = Muted, fontSize = 11.sp)
+                                }
+                                Text(if (server.pingMs == Long.MAX_VALUE) "—" else "\u0024{server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
+                            }
+                            Text("سرعت اعلامی: \u0024{server.speedLabel}   •   کاربران: \u0024{server.sessions}", color = Muted, fontSize = 11.sp)
+                            Button(
+                                onClick = {
+                                    try {
+                                        onConnect(VpnGateConfigBuilder.build(server), server.displayName)
+                                    } catch (error: Exception) {
+                                        errorMessage = error.message ?: "تنظیمات این سرور پشتیبانی نمی‌شود."
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(13.dp)
+                            ) { Text("اتصال به این سرور") }
+                        }
+                    }
+                }
+            }
+            if (freeConfigs.isEmpty() && vpnGateServers.isEmpty()) {
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Outlined.Dns, contentDescription = null, tint = Cyan, modifier = Modifier.size(36.dp))
+                            Spacer(Modifier.height(10.dp))
+                            Text("هنوز سروری دریافت نشده", fontWeight = FontWeight.Bold)
+                            Text("دریافت کانفیگ‌ها یا VPN Gate را بزن.", color = Muted, fontSize = 12.sp)
+                        }
                     }
                 }
             }
