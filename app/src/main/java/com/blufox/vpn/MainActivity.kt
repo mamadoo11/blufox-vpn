@@ -77,6 +77,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
 
 private val Night = Color(0xFF07111F)
 private val Panel = Color(0xFF101F33)
@@ -89,6 +94,7 @@ private val Amber = Color(0xFFFFB454)
 private val Red = Color(0xFFFF667A)
 
 class MainActivity : ComponentActivity() {
+    private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var pendingConfigJson: String? = null
     private var pendingServerName = ""
 
@@ -115,17 +121,48 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun prepareConnection(link: String) {
-        try {
-            val normalized = link.trim()
-            val profile = when {
-                normalized.startsWith("vless://", true) -> VlessConfigBuilder.fromShareLink(normalized)
-                normalized.startsWith("ss://", true) -> ShadowsocksConfigBuilder.fromShareLink(normalized)
-                else -> throw IllegalArgumentException("فعلاً لینک‌های VLESS و Outline/SS پشتیبانی می‌شوند.")
+        val normalized = link.trim()
+        when {
+            normalized.startsWith("ssconf://", true) -> {
+                activityScope.launch {
+                    VpnRuntime.update(VpnStatus.CONNECTING, message = "در حال دریافت تنظیمات کلید پویا…")
+                    try {
+                        val profile = withContext(Dispatchers.IO) {
+                            DynamicAccessKeyResolver.resolve(normalized)
+                        }
+                        prepareConfig(profile.configJson, profile.name)
+                    } catch (error: Exception) {
+                        VpnRuntime.update(
+                            VpnStatus.ERROR,
+                            message = error.message ?: "دریافت کلید پویای Outline ناموفق بود."
+                        )
+                    }
+                }
             }
-            prepareConfig(profile.configJson, profile.name)
-        } catch (error: Exception) {
-            VpnRuntime.update(VpnStatus.ERROR, message = error.message ?: "لینک سرور قابل خواندن نیست.")
+            normalized.startsWith("vless://", true) -> {
+                runCatching { VlessConfigBuilder.fromShareLink(normalized) }
+                    .onSuccess { prepareConfig(it.configJson, it.name) }
+                    .onFailure {
+                        VpnRuntime.update(VpnStatus.ERROR, message = it.message ?: "لینک VLESS معتبر نیست.")
+                    }
+            }
+            normalized.startsWith("ss://", true) -> {
+                runCatching { ShadowsocksConfigBuilder.fromShareLink(normalized) }
+                    .onSuccess { prepareConfig(it.configJson, it.name) }
+                    .onFailure {
+                        VpnRuntime.update(VpnStatus.ERROR, message = it.message ?: "لینک SS معتبر نیست.")
+                    }
+            }
+            else -> VpnRuntime.update(
+                VpnStatus.ERROR,
+                message = "فعلاً لینک‌های VLESS، ss:// و ssconf:// پشتیبانی می‌شوند."
+            )
         }
+    }
+
+    override fun onDestroy() {
+        activityScope.cancel()
+        super.onDestroy()
     }
 
     private fun prepareConfig(configJson: String, name: String) {
@@ -235,12 +272,12 @@ private fun BluFoxApp(
                             value = configLink,
                             onValueChange = { configLink = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("لینک vless:// یا ss://") },
+                            label = { Text("لینک vless://، ss:// یا ssconf://") },
                             minLines = 3,
                             maxLines = 5
                         )
                         Text(
-                            "VLESS با TLS/REALITY و لینک‌های استاندارد Outline/SS پشتیبانی می‌شوند. لینک‌های دارای plugin فعلاً پشتیبانی نمی‌شوند.",
+                            "VLESS، لینک ثابت Outline/SS و کلید پویای ssconf:// پشتیبانی می‌شوند. لینک‌های دارای plugin فعلاً پشتیبانی نمی‌شوند.",
                             color = Muted,
                             fontSize = 11.sp
                         )
@@ -248,7 +285,7 @@ private fun BluFoxApp(
                 },
                 confirmButton = {
                     TextButton(
-                        enabled = configLink.trim().let { it.startsWith("vless://", true) || it.startsWith("ss://", true) },
+                        enabled = configLink.trim().let { it.startsWith("vless://", true) || it.startsWith("ss://", true) || it.startsWith("ssconf://", true) },
                         onClick = {
                             showConfigDialog = false
                             onConnect(configLink)
