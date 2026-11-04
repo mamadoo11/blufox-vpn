@@ -472,6 +472,7 @@ private fun ServersScreen(onConnect: (String, String) -> Unit) {
     val vpnGateServers = remember { androidx.compose.runtime.mutableStateListOf<VpnGateServer>() }
     var freeLoading by remember { mutableStateOf(false) }
     var gateLoading by remember { mutableStateOf(false) }
+    var warpLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
     Column(
@@ -531,6 +532,30 @@ private fun ServersScreen(onConnect: (String, String) -> Unit) {
                 Spacer(Modifier.width(6.dp))
                 Text(if (gateLoading) "در حال دریافت…" else "VPN Gate")
             }
+        }
+        Button(
+            onClick = {
+                scope.launch {
+                    warpLoading = true
+                    errorMessage = ""
+                    try {
+                        val config = withContext(Dispatchers.IO) { CloudflareWarpRepository.getOrRegister() }
+                        onConnect(config, "Cloudflare WARP")
+                    } catch (error: Exception) {
+                        errorMessage = error.message ?: "ثبت و اتصال WARP ناموفق بود."
+                    } finally {
+                        warpLoading = false
+                    }
+                }
+            },
+            enabled = !warpLoading,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2878D0))
+        ) {
+            Icon(Icons.Outlined.Cloud, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (warpLoading) "در حال ثبت WARP رایگان…" else "اتصال رایگان Cloudflare WARP")
         }
         if (errorMessage.isNotBlank()) {
             Text(errorMessage, color = Red, fontSize = 12.sp)
