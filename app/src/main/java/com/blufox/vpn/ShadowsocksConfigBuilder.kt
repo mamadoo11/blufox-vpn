@@ -5,7 +5,6 @@ import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
-import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
 data class ShadowsocksProfile(val name: String, val configJson: String)
@@ -27,7 +26,7 @@ object ShadowsocksConfigBuilder {
         val fragmentSplit = withoutScheme.split("#", limit = 2)
         val beforeFragment = fragmentSplit[0]
         val displayName = fragmentSplit.getOrNull(1)
-            ?.let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
+            ?.let { Uri.decode(it) }
             ?.takeIf { it.isNotBlank() }
 
         val querySplit = beforeFragment.split("?", limit = 2)
@@ -128,7 +127,7 @@ object ShadowsocksConfigBuilder {
     }
 
     private fun decodeCredentials(value: String): String {
-        val decodedPercent = URLDecoder.decode(value, StandardCharsets.UTF_8.name())
+        val decodedPercent = Uri.decode(value)
         return if (decodedPercent.contains(":")) decodedPercent
         else decodeBase64(decodedPercent)
             ?: throw IllegalArgumentException("اطلاعات رمزنگاری لینک SS قابل خواندن نیست.")
