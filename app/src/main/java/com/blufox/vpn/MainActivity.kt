@@ -116,7 +116,12 @@ class MainActivity : ComponentActivity() {
 
     private fun prepareConnection(link: String) {
         try {
-            val profile = VlessConfigBuilder.fromShareLink(link)
+            val normalized = link.trim()
+            val profile = when {
+                normalized.startsWith("vless://", true) -> VlessConfigBuilder.fromShareLink(normalized)
+                normalized.startsWith("ss://", true) -> ShadowsocksConfigBuilder.fromShareLink(normalized)
+                else -> throw IllegalArgumentException("فعلاً لینک‌های VLESS و Outline/SS پشتیبانی می‌شوند.")
+            }
             prepareConfig(profile.configJson, profile.name)
         } catch (error: Exception) {
             VpnRuntime.update(VpnStatus.ERROR, message = error.message ?: "لینک سرور قابل خواندن نیست.")
@@ -222,20 +227,20 @@ private fun BluFoxApp(
             AlertDialog(
                 onDismissRequest = { showConfigDialog = false },
                 containerColor = Panel,
-                title = { Text("افزودن سرور VLESS") },
+                title = { Text("افزودن سرور VLESS یا Outline") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("لینک سرور VLESS را اینجا جای‌گذاری کن. اطلاعات سرور روی گوشی پردازش می‌شود.")
+                        Text("لینک VLESS یا کلید اشتراک Outline/Shadowsocks را اینجا جای‌گذاری کن. اطلاعات روی گوشی پردازش می‌شود.")
                         OutlinedTextField(
                             value = configLink,
                             onValueChange = { configLink = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("لینک vless://") },
+                            label = { Text("لینک vless:// یا ss://") },
                             minLines = 3,
                             maxLines = 5
                         )
                         Text(
-                            "فعلاً VLESS با TLS یا REALITY و انتقال TCP، WebSocket یا gRPC پشتیبانی می‌شود.",
+                            "VLESS با TLS/REALITY و لینک‌های استاندارد Outline/SS پشتیبانی می‌شوند. لینک‌های دارای plugin فعلاً پشتیبانی نمی‌شوند.",
                             color = Muted,
                             fontSize = 11.sp
                         )
@@ -243,7 +248,7 @@ private fun BluFoxApp(
                 },
                 confirmButton = {
                     TextButton(
-                        enabled = configLink.trim().startsWith("vless://", true),
+                        enabled = configLink.trim().let { it.startsWith("vless://", true) || it.startsWith("ss://", true) },
                         onClick = {
                             showConfigDialog = false
                             onConnect(configLink)
