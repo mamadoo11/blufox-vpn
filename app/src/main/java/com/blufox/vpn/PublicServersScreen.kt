@@ -37,6 +37,7 @@ fun PublicServersScreen(
     var cloudLoading by remember { mutableStateOf(false) }
     var gateLoading by remember { mutableStateOf(false) }
     var warpLoading by remember { mutableStateOf(false) }
+    var gateVisibleCount by remember { mutableIntStateOf(100) }
     var message by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
 
@@ -92,14 +93,18 @@ fun PublicServersScreen(
                 if (expanded["gate"] == true) {
                     if (gateLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if (gateServers.isEmpty() && !gateLoading) TextButton(onClick = ::loadGate) { Icon(Icons.Outlined.Refresh, null); Text("دریافت سرورها") }
-                    gateServers.take(300).forEach { server ->
+                    gateServers.take(gateVisibleCount).forEach { server ->
                         PublicServerRow(
                             title = server.displayName,
                             subtitle = "OpenVPN • ${server.countryCode} • پینگ اعلامی منبع: ${if (server.pingMs == Long.MAX_VALUE) "نامشخص" else "${server.pingMs} ms"} • ${server.speedLabel}",
                             onClick = { runCatching { VpnGateConfigBuilder.build(server) }.onSuccess { onConnectConfig(it, server.displayName) }.onFailure { error = it.message ?: "ساخت کانفیگ ناموفق بود." } }
                         )
                     }
-                    if (gateServers.size > 300) Text("برای جلوگیری از سنگین شدن صفحه، ۳۰۰ مورد اول نمایش داده شده؛ ${gateServers.size} مورد دریافت شده است.", color = Color(0xFF91A4BC), fontSize = 10.sp)
+                    if (gateServers.size > gateVisibleCount) {
+                        TextButton(onClick = { gateVisibleCount = (gateVisibleCount + 100).coerceAtMost(gateServers.size) }) {
+                            Text("نمایش ۱۰۰ سرور بعدی • باقی‌مانده: " + (gateServers.size - gateVisibleCount))
+                        }
+                    }
                 }
             }
             item {
