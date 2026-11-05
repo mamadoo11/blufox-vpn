@@ -5,7 +5,6 @@ import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -46,8 +45,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 
 private val BNight = Color(0xFF07111F)
 private val BPanel = Color(0xFF101F33)
@@ -259,16 +256,6 @@ private fun ServerManagerScreen(
     var error by remember { mutableStateOf("") }
     var info by remember { mutableStateOf("") }
 
-    val qrScanner = rememberLauncherForActivityResult(ScanContract()) { result ->
-        result.contents?.let { scanned ->
-            serverLink = scanned.trim()
-            serverName = "سرور QR"
-            editingId = null
-            showEditor = true
-            error = ""
-        }
-    }
-
     fun persist() = ServerStore.save(context, servers.toList())
     fun beginAdd() {
         editingId = null
@@ -322,9 +309,6 @@ private fun ServerManagerScreen(
             Column(Modifier.weight(1f)) {
                 Text("سرورهای من", fontSize = 24.sp, fontWeight = FontWeight.Black)
                 Text("${servers.size} سرور ذخیره‌شده روی گوشی", color = BMuted, fontSize = 12.sp)
-            }
-            IconButton(onClick = { qrScanner.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE).setPrompt("کد QR سرور را اسکن کن").setBeepEnabled(false).setOrientationLocked(false)) }) {
-                Icon(Icons.Outlined.QrCode, contentDescription = "اسکن QR", tint = BCyan)
             }
             IconButton(onClick = ::beginAdd) { Icon(Icons.Outlined.Add, contentDescription = "افزودن", tint = BCyan) }
         }
