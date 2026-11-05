@@ -5,7 +5,7 @@
  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED"/>
  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
  <application android:allowBackup="false" android:label="BluFox VPN" android:supportsRtl="true" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
-  <activity android:name=".MainActivity" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" android:exported="true">
+  <activity android:name=".BluFoxMainActivity" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" android:exported="true">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
   </activity>
   <service android:name=".BluFoxVpnService" android:exported="false" android:foregroundServiceType="systemExempted" android:permission="android.permission.BIND_VPN_SERVICE">
