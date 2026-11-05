@@ -27,8 +27,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun PublicServersScreen(
     onBack: () -> Unit,
-    onConnectLink: (String, String) -> Unit,
-    onConnectConfig: (String, String) -> Unit
+    onSaveServer: (SavedServer) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val groups = remember { mutableStateListOf<List<CloudFoxPublicConfig>>() }
@@ -114,7 +113,19 @@ fun PublicServersScreen(
                         PublicServerRow(
                             title = server.displayName,
                             subtitle = "OpenVPN • ${server.countryCode} • پینگ اعلامی منبع: ${if (server.pingMs == Long.MAX_VALUE) "نامشخص" else "${server.pingMs} ms"} • ${server.speedLabel}",
-                            onClick = { runCatching { VpnGateConfigBuilder.build(server) }.onSuccess { onConnectConfig(it, server.displayName) }.onFailure { error = it.message ?: "ساخت کانفیگ ناموفق بود." } },
+                            onClick = {
+                                runCatching { VpnGateConfigBuilder.build(server) }
+                                    .onSuccess { config -> onSaveServer(SavedServer(
+                                        id = "vpngate:${server.ip}:${server.countryCode}",
+                                        name = server.displayName,
+                                        protocol = "OpenVPN",
+                                        country = server.country,
+                                        address = server.ip,
+                                        configJson = config,
+                                        source = "VPN Gate"
+                                    )) }
+                                    .onFailure { error = it.message ?: "ساخت کانفیگ ناموفق بود." }
+                            },
                             probeText = if (probing["gate-${server.ip}"] == true) "در حال تست…" else probeResults["gate-${server.ip}"]?.label,
                             onProbe = { runProbe("gate-${server.ip}") { PublicServerProbe.probeVpnGate(server) } }
                         )
@@ -138,7 +149,13 @@ fun PublicServersScreen(
                                 error = ""
                                 try {
                                     val config = withContext(Dispatchers.IO) { CloudflareWarpRepository.getOrRegister() }
-                                    onConnectConfig(config, "Cloudflare WARP")
+                                    onSaveServer(SavedServer(
+                                        id = "warp:cloudflare",
+                                        name = "Cloudflare WARP",
+                                        protocol = "WARP",
+                                        configJson = config,
+                                        source = "WARP"
+                                    ))
                                 } catch (e: Exception) {
                                     error = e.message ?: "ساخت پروفایل WARP ناموفق بود."
                                 } finally { warpLoading = false }
@@ -146,7 +163,7 @@ fun PublicServersScreen(
                         },
                         enabled = !warpLoading,
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (warpLoading) "در حال دریافت پروفایل…" else "ساخت / اتصال پروفایل WARP") }
+                    ) { Text(if (warpLoading) "در حال دریافت پروفایل…" else "دریافت و انتخاب WARP") }
                 }
             }
             item {
@@ -162,7 +179,13 @@ fun PublicServersScreen(
                         if (expanded["cloudfox-${index}"] == true) {
                             entries.take(120).forEach { entry ->
                                 PublicServerRow(entry.name, "${entry.protocol} • منبع CloudFox / گروه ${entry.sourceGroup}",
-                                    onClick = { onConnectLink(entry.shareLink, entry.name) },
+                                    onClick = { onSaveServer(SavedServer(
+                                        id = entry.id,
+                                        name = entry.name,
+                                        protocol = entry.protocol,
+                                        shareLink = entry.shareLink,
+                                        source = "CloudFox"
+                                    )) },
                                     probeText = if (probing[entry.id] == true) "در حال تست…" else probeResults[entry.id]?.label,
                                     onProbe = { runProbe(entry.id) { PublicServerProbe.probeLink(entry.shareLink) } }
                                 )
@@ -185,7 +208,13 @@ fun PublicServersScreen(
                         if (expanded["protocol-$protocol"] == true) {
                             entries.take(150).forEach { entry ->
                                 PublicServerRow(entry.name, protocol,
-                                    onClick = { onConnectLink(entry.shareLink, entry.name) },
+                                    onClick = { onSaveServer(SavedServer(
+                                        id = entry.id,
+                                        name = entry.name,
+                                        protocol = entry.protocol,
+                                        shareLink = entry.shareLink,
+                                        source = "CloudFox"
+                                    )) },
                                     probeText = if (probing[entry.id] == true) "در حال تست…" else probeResults[entry.id]?.label,
                                     onProbe = { runProbe(entry.id) { PublicServerProbe.probeLink(entry.shareLink) } }
                                 )
@@ -246,7 +275,7 @@ private fun PublicServerRow(
             Text(subtitle, color = Color(0xFF91A4BC), fontSize = 10.sp)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
-                    Text("اتصال", color = Color(0xFF35D6E8), fontSize = 10.sp)
+                    Text("انتخاب برای صفحه اصلی", color = Color(0xFF35D6E8), fontSize = 10.sp)
                 }
                 Spacer(Modifier.width(12.dp))
                 if (onProbe != null) TextButton(onClick = onProbe, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
