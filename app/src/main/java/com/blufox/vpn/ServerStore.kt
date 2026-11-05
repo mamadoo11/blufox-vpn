@@ -19,6 +19,15 @@ data class SavedServer(
 object ServerStore {
     private const val PREFS = "blufox_saved_servers"
     private const val KEY = "servers"
+    private const val SELECTED_KEY = "selected_server_id"
+
+    fun loadSelectedId(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(SELECTED_KEY, "").orEmpty()
+
+    fun saveSelectedId(context: Context, id: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(SELECTED_KEY, id).apply()
+    }
 
     fun load(context: Context): List<SavedServer> {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, "[]") ?: "[]"
