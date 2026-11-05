@@ -94,6 +94,9 @@ class BluFoxMainActivity : ComponentActivity() {
             link.startsWith("vless://", true) -> runCatching { VlessConfigBuilder.fromShareLink(link) }
                 .onSuccess { connectConfig(it.configJson, displayName.ifBlank { it.name }) }
                 .onFailure { VpnRuntime.update(VpnStatus.ERROR, displayName, it.message ?: "لینک VLESS معتبر نیست.") }
+            link.startsWith("vmess://", true) -> runCatching { VMessConfigBuilder.fromShareLink(link) }
+                .onSuccess { connectConfig(it.configJson, displayName.ifBlank { it.name }) }
+                .onFailure { VpnRuntime.update(VpnStatus.ERROR, displayName, it.message ?: "لینک VMess معتبر نیست.") }
             link.startsWith("ss://", true) -> runCatching { ShadowsocksConfigBuilder.fromShareLink(link) }
                 .onSuccess { connectConfig(it.configJson, displayName.ifBlank { it.name }) }
                 .onFailure { VpnRuntime.update(VpnStatus.ERROR, displayName, it.message ?: "لینک Shadowsocks معتبر نیست.") }
@@ -253,6 +256,7 @@ private fun ServerManagerScreen(
     var serverName by remember { mutableStateOf("") }
     var serverLink by remember { mutableStateOf("") }
     var loadingGate by remember { mutableStateOf(false) }
+    var showPublicServers by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var info by remember { mutableStateOf("") }
 
@@ -277,6 +281,7 @@ private fun ServerManagerScreen(
         try {
             val protocol = when {
                 link.startsWith("vless://", true) -> { VlessConfigBuilder.fromShareLink(link); "VLESS" }
+                link.startsWith("vmess://", true) -> { VMessConfigBuilder.fromShareLink(link); "VMess" }
                 link.startsWith("ss://", true) -> { ShadowsocksConfigBuilder.fromShareLink(link); "Shadowsocks" }
                 link.startsWith("trojan://", true) -> { TrojanConfigBuilder.fromShareLink(link); "Trojan" }
                 link.startsWith("ssconf://", true) -> "Outline Dynamic"
@@ -298,6 +303,15 @@ private fun ServerManagerScreen(
         }
     }
 
+    if (showPublicServers) {
+        PublicServersScreen(
+            onBack = { showPublicServers = false },
+            onConnectLink = onConnectLink,
+            onConnectConfig = onConnectConfig
+        )
+        return
+    }
+
     LaunchedEffect(Unit) {
         servers.clear()
         servers.addAll(ServerStore.load(context))
@@ -310,6 +324,7 @@ private fun ServerManagerScreen(
                 Text("سرورهای من", fontSize = 24.sp, fontWeight = FontWeight.Black)
                 Text("${servers.size} سرور ذخیره‌شده روی گوشی", color = BMuted, fontSize = 12.sp)
             }
+            TextButton(onClick = { showPublicServers = true }) { Text("عمومی", color = BCyan) }
             IconButton(onClick = ::beginAdd) { Icon(Icons.Outlined.Add, contentDescription = "افزودن", tint = BCyan) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -348,7 +363,7 @@ private fun ServerManagerScreen(
                 Spacer(Modifier.width(5.dp)); Text(if (loadingGate) "در حال دریافت…" else "به‌روزرسانی عمومی")
             }
         }
-        Text("برای افزودن سرور اختصاصی، لینک را وارد کن. به‌روزرسانی عمومی فقط VPN Gate مستقل را دریافت می‌کند؛ هیچ ارتباطی با CloudFox ندارد.", color = BMuted, fontSize = 11.sp)
+        Text("سرورهای عمومی شامل VPN Gate، WARP و فهرست‌های عمومی CloudFox هستند. دریافت هر منبع فقط با باز کردن همان گروه انجام می‌شود.", color = BMuted, fontSize = 11.sp)
         if (error.isNotBlank()) Text(error, color = BRed, fontSize = 12.sp)
         if (info.isNotBlank()) Text(info, color = BGreen, fontSize = 12.sp)
         if (servers.isEmpty()) {
@@ -426,7 +441,7 @@ private fun ServerManagerScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(value = serverName, onValueChange = { serverName = it }, label = { Text("نام دلخواه سرور") }, singleLine = true)
                     OutlinedTextField(value = serverLink, onValueChange = { serverLink = it }, label = { Text("لینک سرور") }, minLines = 3, maxLines = 5)
-                    Text("پشتیبانی: VLESS، Shadowsocks، Trojan و ssconf پویا. لینک‌ها فقط روی گوشی ذخیره می‌شوند.", color = BMuted, fontSize = 11.sp)
+                    Text("پشتیبانی: VLESS، VMess، Shadowsocks، Trojan و ssconf پویا. لینک‌ها فقط روی گوشی ذخیره می‌شوند.", color = BMuted, fontSize = 11.sp)
                 }
             },
             confirmButton = { TextButton(onClick = ::saveManual) { Text("ذخیره") } },
