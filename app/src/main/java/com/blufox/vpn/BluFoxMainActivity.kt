@@ -142,6 +142,13 @@ private fun BluFoxRoot(
     onDisconnect: () -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    var selectedServer by remember { mutableStateOf<SavedServer?>(null) }
+    LaunchedEffect(tab) {
+        val saved = ServerStore.load(context)
+        val selectedId = ServerStore.loadSelectedId(context)
+        selectedServer = saved.firstOrNull { it.id == selectedId } ?: saved.firstOrNull()
+    }
     MaterialTheme(colorScheme = darkColorScheme(
         primary = BElectric, secondary = BCyan, background = BNight, surface = BPanel,
         onPrimary = Color.White, onBackground = Color(0xFFF2F7FF), onSurface = Color(0xFFF2F7FF)
@@ -172,7 +179,18 @@ private fun BluFoxRoot(
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (tab) {
-                    0 -> BluFoxHome(vpnState, { tab = 1 }, onDisconnect)
+                    0 -> BluFoxHome(
+                        state = vpnState,
+                        selectedServerName = selectedServer?.name.orEmpty(),
+                        onServers = { tab = 1 },
+                        onConnectSelected = {
+                            val server = selectedServer
+                            if (server == null) tab = 1
+                            else if (server.configJson.isNotBlank()) onConnectConfig(server.configJson, server.name)
+                            else onConnectLink(server.shareLink, server.name)
+                        },
+                        onDisconnect = onDisconnect
+                    )
                     1 -> ServerManagerScreen(onConnectLink, onConnectConfig, vpnState)
                     2 -> SimpleInfoScreen("ابزارها", "آزمون پینگ و سرعت پس از تثبیت مدیریت سرورها اضافه می‌شود.")
                     else -> SimpleInfoScreen("تنظیمات", "سرورها و لینک‌ها فقط در حافظه داخلی همین گوشی ذخیره می‌شوند.")
@@ -183,7 +201,13 @@ private fun BluFoxRoot(
 }
 
 @Composable
-private fun BluFoxHome(state: VpnUiState, onServers: () -> Unit, onDisconnect: () -> Unit) {
+private fun BluFoxHome(
+    state: VpnUiState,
+    selectedServerName: String,
+    onServers: () -> Unit,
+    onConnectSelected: () -> Unit,
+    onDisconnect: () -> Unit
+) {
     val color = when (state.status) {
         VpnStatus.CONNECTED -> BGreen
         VpnStatus.CONNECTING -> BAmber
@@ -216,15 +240,28 @@ private fun BluFoxHome(state: VpnUiState, onServers: () -> Unit, onDisconnect: (
                     Spacer(Modifier.width(8.dp))
                     Text(label, fontWeight = FontWeight.Bold)
                 }
-                if (state.serverName.isNotBlank()) Text(state.serverName, color = BMuted, fontSize = 12.sp)
+                Text(
+                    if (state.status == VpnStatus.CONNECTED) state.serverName
+                    else selectedServerName.ifBlank { "هنوز سروری انتخاب نشده است" },
+                    color = if (selectedServerName.isBlank() && state.status != VpnStatus.CONNECTED) BAmber else BMuted,
+                    fontSize = 12.sp
+                )
                 Spacer(Modifier.height(14.dp))
                 if (state.status == VpnStatus.CONNECTED) {
                     Button(onClick = onDisconnect, modifier = Modifier.fillMaxWidth().height(54.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB33E56))) {
                         Text("قطع اتصال", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     }
                 } else {
-                    Button(onClick = onServers, modifier = Modifier.fillMaxWidth().height(54.dp), enabled = state.status != VpnStatus.CONNECTING) {
-                        Text(if (state.status == VpnStatus.CONNECTING) "در حال اتصال…" else "انتخاب سرور و اتصال", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Button(onClick = onConnectSelected, modifier = Modifier.fillMaxWidth().height(54.dp), enabled = state.status != VpnStatus.CONNECTING) {
+                        Text(
+                            when {
+                                state.status == VpnStatus.CONNECTING -> "در حال اتصال…"
+                                selectedServerName.isBlank() -> "انتخاب سرور"
+                                else -> "اتصال به سرور انتخاب‌شده"
+                            },
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
                 if (state.exitIp.isNotBlank()) Text("IP خروجی: ${state.exitIp}", color = BCyan, fontSize = 12.sp)
@@ -294,6 +331,7 @@ private fun ServerManagerScreen(
             )
             if (index >= 0) servers[index] = record else servers.add(0, record)
             selectedId = record.id
+            ServerStore.saveSelectedId(context, record.id)
             persist()
             showEditor = false
             error = ""
@@ -306,8 +344,17 @@ private fun ServerManagerScreen(
     if (showPublicServers) {
         PublicServersScreen(
             onBack = { showPublicServers = false },
-            onConnectLink = onConnectLink,
-            onConnectConfig = onConnectConfig
+            onSaveServer = { server ->
+                val current = ServerStore.load(context).toMutableList()
+                val index = current.indexOfFirst { it.id == server.id }
+                if (index >= 0) current[index] = server else current.add(0, server)
+                ServerStore.save(context, current)
+                ServerStore.saveSelectedId(context, server.id)
+                selectedId = server.id
+                showPublicServers = false
+                info = "سرور «${server.name}» ذخیره و برای صفحه اصلی انتخاب شد."
+                error = ""
+            }
         )
         return
     }
@@ -315,7 +362,8 @@ private fun ServerManagerScreen(
     LaunchedEffect(Unit) {
         servers.clear()
         servers.addAll(ServerStore.load(context))
-        if (selectedId.isBlank()) selectedId = servers.firstOrNull()?.id.orEmpty()
+        if (selectedId.isBlank()) selectedId = ServerStore.loadSelectedId(context).ifBlank { servers.firstOrNull()?.id.orEmpty() }
+        if (selectedId.isNotBlank()) ServerStore.saveSelectedId(context, selectedId)
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -380,7 +428,10 @@ private fun ServerManagerScreen(
             items(servers, key = { it.id }) { server ->
                 val selected = selectedId == server.id
                 Card(
-                    modifier = Modifier.fillMaxWidth().clickable { selectedId = server.id },
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        selectedId = server.id
+                        ServerStore.saveSelectedId(context, server.id)
+                    },
                     colors = CardDefaults.cardColors(containerColor = if (selected) BPanelSoft else BPanel),
                     border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) BCyan else Color(0xFF203750)),
                     shape = RoundedCornerShape(17.dp)
@@ -394,7 +445,10 @@ private fun ServerManagerScreen(
                             if (selected) Text("انتخاب‌شده", color = BCyan, fontSize = 10.sp)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = { selectedId = server.id }) { Text("انتخاب") }
+                            TextButton(onClick = {
+                                selectedId = server.id
+                                ServerStore.saveSelectedId(context, server.id)
+                            }) { Text("انتخاب") }
                             if (server.source == "manual") {
                                 TextButton(onClick = { beginEdit(server) }) {
                                     Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -403,7 +457,10 @@ private fun ServerManagerScreen(
                             }
                             TextButton(onClick = {
                                 servers.removeAll { it.id == server.id }
-                                if (selectedId == server.id) selectedId = servers.firstOrNull()?.id.orEmpty()
+                                if (selectedId == server.id) {
+                                    selectedId = servers.firstOrNull()?.id.orEmpty()
+                                    ServerStore.saveSelectedId(context, selectedId)
+                                }
                                 persist()
                                 info = "سرور حذف شد."
                             }) {
