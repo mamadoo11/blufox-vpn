@@ -42,7 +42,7 @@ object VpnGateRepository {
             val rows = connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                 val result = mutableListOf<VpnGateServer>()
                 var line = reader.readLine()
-                while (line != null && result.size < 250) {
+                while (line != null) {
                     if (line.isNotBlank() && !line.startsWith("*") && !line.startsWith("#")) {
                         val cells = parseCsvLine(line)
                         if (cells.size >= 15) {
