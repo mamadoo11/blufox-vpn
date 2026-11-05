@@ -87,6 +87,11 @@ fun PublicServersScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        loadGate()
+        loadCloudFox()
+    }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, contentDescription = "بازگشت") }
