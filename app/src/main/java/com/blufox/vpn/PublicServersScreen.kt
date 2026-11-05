@@ -38,6 +38,18 @@ fun PublicServersScreen(
     var gateLoading by remember { mutableStateOf(false) }
     var warpLoading by remember { mutableStateOf(false) }
     var gateVisibleCount by remember { mutableIntStateOf(100) }
+    val probeResults = remember { mutableStateMapOf<String, ServerProbeResult>() }
+    val probing = remember { mutableStateMapOf<String, Boolean>() }
+
+    fun runProbe(key: String, action: () -> ServerProbeResult) {
+        if (probing[key] == true) return
+        scope.launch {
+            probing[key] = true
+            val result = withContext(Dispatchers.IO) { action() }
+            probeResults[key] = result
+            probing[key] = false
+        }
+    }
     var message by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
 
@@ -97,7 +109,9 @@ fun PublicServersScreen(
                         PublicServerRow(
                             title = server.displayName,
                             subtitle = "OpenVPN • ${server.countryCode} • پینگ اعلامی منبع: ${if (server.pingMs == Long.MAX_VALUE) "نامشخص" else "${server.pingMs} ms"} • ${server.speedLabel}",
-                            onClick = { runCatching { VpnGateConfigBuilder.build(server) }.onSuccess { onConnectConfig(it, server.displayName) }.onFailure { error = it.message ?: "ساخت کانفیگ ناموفق بود." } }
+                            onClick = { runCatching { VpnGateConfigBuilder.build(server) }.onSuccess { onConnectConfig(it, server.displayName) }.onFailure { error = it.message ?: "ساخت کانفیگ ناموفق بود." } },
+                            probeText = if (probing["gate-${server.ip}"] == true) "در حال تست…" else probeResults["gate-${server.ip}"]?.label,
+                            onProbe = { runProbe("gate-${server.ip}") { PublicServerProbe.probeVpnGate(server) } }
                         )
                     }
                     if (gateServers.size > gateVisibleCount) {
@@ -142,9 +156,11 @@ fun PublicServersScreen(
                             expanded["cloudfox-${index}"] == true, entries.size, { toggle("cloudfox-${index}") })
                         if (expanded["cloudfox-${index}"] == true) {
                             entries.take(120).forEach { entry ->
-                                PublicServerRow(entry.name, "${entry.protocol} • منبع CloudFox / گروه ${entry.sourceGroup}") {
-                                    onConnectLink(entry.shareLink, entry.name)
-                                }
+                                PublicServerRow(entry.name, "${entry.protocol} • منبع CloudFox / گروه ${entry.sourceGroup}",
+                                    onClick = { onConnectLink(entry.shareLink, entry.name) },
+                                    probeText = if (probing[entry.id] == true) "در حال تست…" else probeResults[entry.id]?.label,
+                                    onProbe = { runProbe(entry.id) { PublicServerProbe.probeLink(entry.shareLink) } }
+                                )
                             }
                             if (entries.size > 120) Text("نمایش ۱۲۰ مورد اول این گروه؛ تعداد کل: ${entries.size}", color = Color(0xFF91A4BC), fontSize = 10.sp)
                         }
@@ -163,14 +179,18 @@ fun PublicServersScreen(
                             entries.size, { toggle("protocol-$protocol") })
                         if (expanded["protocol-$protocol"] == true) {
                             entries.take(150).forEach { entry ->
-                                PublicServerRow(entry.name, protocol) { onConnectLink(entry.shareLink, entry.name) }
+                                PublicServerRow(entry.name, protocol,
+                                    onClick = { onConnectLink(entry.shareLink, entry.name) },
+                                    probeText = if (probing[entry.id] == true) "در حال تست…" else probeResults[entry.id]?.label,
+                                    onProbe = { runProbe(entry.id) { PublicServerProbe.probeLink(entry.shareLink) } }
+                                )
                             }
                         }
                     }
                 }
             }
             item {
-                Text("توجه: کانفیگ‌های عمومی ممکن است قطع، کند یا ناامن باشند. پینگ اعلامی VPN Gate هنوز آزمون زنده نیست؛ اندازه‌گیری واقعی تأخیر در مرحله بعد اضافه می‌شود.", color = Color(0xFFFFB454), fontSize = 11.sp)
+                Text("توجه: عدد تست‌شده، زمان اتصال TCP به پورت سرور است و پینگ ICMP یا تضمین اتصال VPN نیست. سرورهای UDP در این آزمون TCP پشتیبانی نمی‌شوند.", color = Color(0xFFFFB454), fontSize = 11.sp)
             }
         }
     }
@@ -204,7 +224,13 @@ private fun PublicGroupHeader(
 }
 
 @Composable
-private fun PublicServerRow(title: String, subtitle: String, onClick: () -> Unit) {
+private fun PublicServerRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    probeText: String? = null,
+    onProbe: (() -> Unit)? = null
+) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(start = 10.dp).clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF142842)),
@@ -213,7 +239,19 @@ private fun PublicServerRow(title: String, subtitle: String, onClick: () -> Unit
         Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
             Text(subtitle, color = Color(0xFF91A4BC), fontSize = 10.sp)
-            Text("برای اتصال لمس کن", color = Color(0xFF35D6E8), fontSize = 10.sp)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
+                    Text("اتصال", color = Color(0xFF35D6E8), fontSize = 10.sp)
+                }
+                Spacer(Modifier.width(12.dp))
+                if (onProbe != null) TextButton(onClick = onProbe, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
+                    Text("تست TCP", color = Color(0xFF35D6E8), fontSize = 10.sp)
+                }
+                if (!probeText.isNullOrBlank()) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(probeText, color = if (probeText.contains("ms")) Color(0xFF25C58A) else Color(0xFFFFB454), fontSize = 10.sp)
+                }
+            }
         }
     }
 }
