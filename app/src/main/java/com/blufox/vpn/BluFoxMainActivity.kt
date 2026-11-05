@@ -256,7 +256,7 @@ private fun ServerManagerScreen(
     var serverName by remember { mutableStateOf("") }
     var serverLink by remember { mutableStateOf("") }
     var loadingGate by remember { mutableStateOf(false) }
-    var showPublicServers by remember { mutableStateOf(false) }
+    var showPublicServers by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     var info by remember { mutableStateOf("") }
 
