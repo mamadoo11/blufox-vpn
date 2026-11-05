@@ -27,6 +27,7 @@ dependencies {
  implementation("androidx.compose.material3:material3")
  implementation("androidx.compose.material:material-icons-extended")
  implementation("com.github.singbox-android:libbox:1.14.4")
+ implementation("com.journeyapps:zxing-android-embedded:4.3.0")
  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
  implementation("org.bouncycastle:bcprov-jdk18on:1.80")
  debugImplementation("androidx.compose.ui:ui-tooling")
