@@ -324,7 +324,7 @@ private fun ServerManagerScreen(
                 Text("${servers.size} سرور ذخیره‌شده روی گوشی", color = BMuted, fontSize = 12.sp)
             }
             IconButton(onClick = { qrScanner.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE).setPrompt("کد QR سرور را اسکن کن").setBeepEnabled(false).setOrientationLocked(false)) }) {
-                Icon(Icons.Outlined.QrCodeScanner, contentDescription = "اسکن QR", tint = BCyan)
+                Icon(Icons.Outlined.QrCode, contentDescription = "اسکن QR", tint = BCyan)
             }
             IconButton(onClick = ::beginAdd) { Icon(Icons.Outlined.Add, contentDescription = "افزودن", tint = BCyan) }
         }
