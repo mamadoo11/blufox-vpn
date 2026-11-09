@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -125,22 +126,41 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
 
  private suspend fun verifyTunnelTraffic():String {
   var lastError:Throwable?=null
-  repeat(3) { attempt ->
+  repeat(2) { attempt ->
+   // Try an independent provider if Cloudflare is blocked or unavailable on this network.
    try {
     val trace=requestText("https://www.cloudflare.com/cdn-cgi/trace")
-    val ip=trace.lineSequence().firstOrNull{it.startsWith("ip=")}?.substringAfter("=")?.trim()
-    if(!ip.isNullOrBlank())return ip
-    val fallback=requestText("https://api.ipify.org").trim()
-    require(fallback.matches(Regex("[0-9a-fA-F:.]{3,45}"))){"پاسخ IP خروجی معتبر نیست."}
-    return fallback
+    val ip=trace.lineSequence().firstOrNull{it.startsWith("ip=")}?.substringAfter("=")?.trim().orEmpty()
+    if(isValidIpAddress(ip))return ip
+    lastError=IllegalStateException("Cloudflare returned an invalid exit IP.")
    } catch(error:CancellationException) {
     throw error
    } catch(error:Throwable) {
     lastError=error
-    if(attempt<2)delay(2500)
    }
+   try {
+    val ip=requestText("https://api.ipify.org").trim()
+    if(isValidIpAddress(ip))return ip
+    lastError=IllegalStateException("IPify returned an invalid exit IP.")
+   } catch(error:CancellationException) {
+    throw error
+   } catch(error:Throwable) {
+    lastError=error
+   }
+   if(attempt==0)delay(1500)
   }
-  throw IllegalStateException("اتصال تونل شروع شد، اما عبور واقعی اینترنت تأیید نشد. ممکن است سرور عمومی از دسترس خارج شده باشد.",lastError)
+  throw IllegalStateException("تونل VPN راه‌اندازی شد، اما عبور واقعی اینترنت از طریق هیچ‌یک از سرویس‌های بررسی IP تأیید نشد. سرور یا مسیر اینترنت ممکن است محدود باشد.",lastError)
+ }
+
+ private fun isValidIpAddress(value:String):Boolean {
+  val ip=value.trim()
+  if(ip.isEmpty()||ip.any{!(it.isDigit()||it in "abcdefABCDEF:.")})return false
+  return if(ip.contains(":")) {
+   runCatching{InetAddress.getByName(ip).address.size==16}.getOrDefault(false)
+  } else {
+   val parts=ip.split(".")
+   parts.size==4&&parts.all{part->part.isNotEmpty()&&part.toIntOrNull()?.let{it in 0..255}==true}
+  }
  }
 
  private fun requestText(address:String):String {
@@ -226,7 +246,7 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
      name=ni.name;index=ni.index
      runCatching{mtu=ni.mtu}
      type=when{ni.name.startsWith("wlan")->Libbox.InterfaceTypeWIFI;ni.name.startsWith("rmnet")->Libbox.InterfaceTypeCellular;else->Libbox.InterfaceTypeOther}
-     addresses=StringArray(ni.interfaceAddresses.mapNotNull{a->val host=a.address?.hostAddress?:return@mapNotNull null;"$host/"+a.networkPrefixLength}.iterator())
+     addresses=StringArray(ni.interfaceAddresses.mapNotNull{a->val host=a.address?.hostAddress?:return@mapNotNull null;"$host/"+a.networkPrefixLength})
     }
     result.add(item)
    }
@@ -253,10 +273,11 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
  override fun usePlatformBridge():Boolean=false
  override fun createBridge(options:BridgeOptions?):BridgeSession=error("Bridge is not enabled.")
 
- private class StringArray(private val iterator:Iterator<String>):StringIterator {
-  override fun len():Int=0
-  override fun hasNext():Boolean=iterator.hasNext()
-  override fun next():String=iterator.next()
+ private class StringArray(private val values:List<String>):StringIterator {
+  private var index=0
+  override fun len():Int=values.size
+  override fun hasNext():Boolean=index<values.size
+  override fun next():String=values[index++]
  }
  private class InterfaceArray(private val iterator:Iterator<LibboxNetworkInterface>):NetworkInterfaceIterator {
   override fun hasNext():Boolean=iterator.hasNext()
