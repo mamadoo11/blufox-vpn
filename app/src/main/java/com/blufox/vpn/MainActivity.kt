@@ -396,7 +396,7 @@ private fun HomeScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("سرورهای پیشنهادی", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Text("فهرست عمومی Verified؛ اعتبار هر سرور جداگانه نمایش داده می‌شود", color = Muted, fontSize = 11.sp)
+                    Text("فهرست Secure/Verified؛ اعتبار هر سرور جداگانه نمایش داده می‌شود", color = Muted, fontSize = 11.sp)
                 }
                 TextButton(onClick = onServers) { Text("همه سرورها") }
             }
@@ -485,7 +485,7 @@ private fun ServerSourceCard(onServers: () -> Unit) {
                 Text("فهرست سرورهای رایگان", fontWeight = FontWeight.SemiBold)
             }
             Text(
-                "منبع Verified هر کانفیگ را پیش از انتشار در سه دور درخواست HTTP واقعی آزمایش می‌کند. این نتیجه مربوط به شبکه آزمایش منبع است؛ دسترسی از اینترنت تو جداگانه سنجیده می‌شود.",
+                "منبع Secure/Verified هر کانفیگ را در سه دور درخواست HTTP واقعی می‌آزماید و تنظیمات ضعیفِ غیرفعال‌کننده اعتبارسنجی گواهی را حذف می‌کند. نتیجه مربوط به شبکه آزمایش منبع است؛ دسترسی از اینترنت تو جداگانه سنجیده می‌شود.",
                 color = Muted,
                 fontSize = 11.sp
             )
@@ -566,13 +566,13 @@ private fun ServersScreen(
     ) {
         Text("سرورها", fontSize = 25.sp, fontWeight = FontWeight.Black)
         Text(
-            "منبع: 0xRadikal • فقط دسته Verified سازگار با sing-box؛ هر سرور پس از سه آزمون HTTP منبع فهرست می‌شود.",
+            "منبع: 0xRadikal • فقط دسته Secure سازگار با sing-box؛ هر سرور پس از سه آزمون HTTP منبع فهرست می‌شود.",
             color = Muted,
             fontSize = 11.sp
         )
         if (sourceUpdatedAt.isNotBlank()) {
             Text(
-                "آخرین به‌روزرسانی منبع: ${sourceUpdatedAt} UTC • نمایش ${servers.size} مورد از ${FreeProxyRepository.verifiedCount} سرور Verified",
+                "آخرین به‌روزرسانی منبع: ${sourceUpdatedAt} UTC • نمایش ${servers.size} مورد از ${FreeProxyRepository.secureCount} سرور Secure/Verified",
                 color = Cyan,
                 fontSize = 10.sp
             )
@@ -662,7 +662,7 @@ private fun ServersScreen(
             Text(successMessage, color = Green, fontSize = 11.sp)
         }
         Text(
-            "اعتبارسنجی Verified مربوط به آزمون سه‌مرحله‌ای منبع است. پینگ این صفحه فقط اتصال TCP به پورت سرور را می‌سنجد؛ اتصال VPN فقط پس از عبور واقعی ترافیک تأیید می‌شود.",
+            "اعتبارسنجی Secure/Verified مربوط به آزمون سه‌مرحله‌ای منبع و فیلتر امنیتی گواهی است. پینگ این صفحه فقط اتصال TCP به پورت سرور را می‌سنجد؛ اتصال VPN فقط پس از عبور واقعی ترافیک تأیید می‌شود.",
             color = Muted,
             fontSize = 10.sp
         )
@@ -720,7 +720,7 @@ private fun ServersScreen(
                             )
                             Spacer(Modifier.weight(1f))
                             Text(
-                                "Verified • ${server.validationRounds}/3 HTTP",
+                                "Secure • Verified ${server.validationRounds}/3 HTTP",
                                 color = Green,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.SemiBold
