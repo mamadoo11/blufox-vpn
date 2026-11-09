@@ -15,16 +15,23 @@ import io.nekohasekai.libbox.*
 import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
 import io.nekohasekai.libbox.Notification as LibboxNotification
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
  companion object {
   const val ACTION_START="com.blufox.vpn.START"
   const val ACTION_STOP="com.blufox.vpn.STOP"
+  const val ACTION_TEST_SERVERS="com.blufox.vpn.TEST_SERVERS"
   const val EXTRA_CONFIG="config_json"
   const val EXTRA_NAME="server_name"
+  const val EXTRA_PROBE_TAGS="probe_tags"
+  const val EXTRA_PROBE_SECRET="probe_secret"
   private const val TAG="BluFoxVPN"
   private const val NOTIF_ID=731
   private const val CHANNEL_ID="blufox_vpn"
@@ -48,22 +55,39 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
   when(intent?.action) {
    ACTION_STOP->{stopTunnel();stopSelf(startId)}
-   ACTION_START->{
+   ACTION_START, ACTION_TEST_SERVERS->{
     val config=intent.getStringExtra(EXTRA_CONFIG).orEmpty()
     val name=intent.getStringExtra(EXTRA_NAME).orEmpty()
     if(config.isBlank()){VpnRuntime.update(VpnStatus.ERROR,message="تنظیمات اتصال خالی است.");stopSelf(startId);return START_NOT_STICKY}
-    startForegroundCompat(buildNotification("در حال اتصال…"))
-    startTunnel(config,name,startId)
+    startForegroundCompat(buildNotification(if(intent.action==ACTION_TEST_SERVERS) "در حال آزمایش واقعی سرورها…" else "در حال اتصال…"))
+    val probeTags=intent.getStringArrayListExtra(EXTRA_PROBE_TAGS).orEmpty()
+    val probeSecret=intent.getStringExtra(EXTRA_PROBE_SECRET).orEmpty()
+    if(intent.action==ACTION_TEST_SERVERS && (probeTags.isEmpty() || probeSecret.isBlank())){
+     VpnRuntime.update(VpnStatus.ERROR,message="اطلاعات آزمایش سرورها ناقص است.");stopForeground(STOP_FOREGROUND_REMOVE);stopSelf(startId);return START_NOT_STICKY
+    }
+    startTunnel(config,name,startId,probeTags,probeSecret)
    }
    else->{stopSelf(startId);return START_NOT_STICKY}
   }
   return START_NOT_STICKY
  }
 
- private fun startTunnel(config:String,name:String,startId:Int) {
+ private fun startTunnel(
+  config:String,
+  name:String,
+  startId:Int,
+  probeTags:List<String> = emptyList(),
+  probeSecret:String = ""
+ ) {
   if(commandServer!=null)stopTunnel()
   closing=false
-  VpnRuntime.update(VpnStatus.CONNECTING,name,"در حال راه‌اندازی موتور و تونل امن…")
+  VpnRuntime.update(
+   VpnStatus.CONNECTING,
+   name,
+   if(probeTags.isNotEmpty()) "در حال راه‌اندازی یک تونل موقت برای آزمایش " + probeTags.size + " سرور…" else "در حال راه‌اندازی موتور و تونل امن…",
+   probeResults=emptyList(),
+   probeCompletedAt=0L
+  )
   scope.launch {
    try {
     setupLibbox(applicationContext)
@@ -72,6 +96,22 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
     server.start()
     commandServer=server
     server.startOrReloadService(config,OverrideOptions())
+    if(probeTags.isNotEmpty()) {
+     val results=probeOutbounds(probeTags,probeSecret)
+     val passed=results.count{it.successful}
+     tearDownCore()
+     VpnRuntime.update(
+      VpnStatus.DISCONNECTED,
+      name,
+      "آزمایش تونل پایان یافت: " + passed + " از " + results.size + " سرور عبور HTTPS موفق داشتند.",
+      probeResults=results,
+      probeCompletedAt=System.currentTimeMillis()
+     )
+     updateNotification("آزمایش پایان یافت • " + passed + "/" + results.size)
+     stopForeground(STOP_FOREGROUND_REMOVE)
+     stopSelf(startId)
+     return@launch
+    }
     val exitIp=verifyTunnelTraffic()
     VpnRuntime.update(VpnStatus.CONNECTED,name,"تونل فعال است؛ عبور واقعی اینترنت تأیید شد.",exitIp)
     updateNotification("متصل • IP خروجی: $exitIp")
@@ -83,6 +123,71 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf(startId)
    }
+  }
+ }
+
+ private suspend fun probeOutbounds(tags:List<String>,secret:String):List<TunnelProbeResult> {
+  awaitClashApi(secret)
+  val gate=Semaphore(4)
+  return coroutineScope {
+   tags.map { tag ->
+    async(Dispatchers.IO) {
+     gate.withPermit { probeOneOutbound(tag,secret) }
+    }
+   }.awaitAll().sortedWith(
+    compareBy<TunnelProbeResult>{!it.successful}
+     .thenBy{it.latencyMs?:Long.MAX_VALUE}
+     .thenBy{it.tag}
+   )
+  }
+ }
+
+ private suspend fun awaitClashApi(secret:String) {
+  var lastError:Throwable?=null
+  repeat(20) {
+   try {
+    val connection=(URL("http://127.0.0.1:9090/version").openConnection() as HttpURLConnection).apply {
+     connectTimeout=1000
+     readTimeout=1500
+     requestMethod="GET"
+     setRequestProperty("Authorization","Bearer " + secret)
+    }
+    try {
+     if(connection.responseCode in 200..299) return
+     lastError=IllegalStateException("Clash API HTTP " + connection.responseCode)
+    } finally { connection.disconnect() }
+   } catch(error:Throwable) { lastError=error }
+   delay(500)
+  }
+  throw IllegalStateException("Clash API داخلی sing-box آماده نشد؛ آزمون واقعی سرورها اجرا نشد.",lastError)
+ }
+
+ private fun probeOneOutbound(tag:String,secret:String):TunnelProbeResult {
+  val encodedTag=URLEncoder.encode(tag,"UTF-8").replace("+","%20")
+  val encodedUrl=URLEncoder.encode("https://www.gstatic.com/generate_204","UTF-8")
+  val address="http://127.0.0.1:9090/proxies/" + encodedTag + "/delay?timeout=7000&url=" + encodedUrl
+  val started=System.nanoTime()
+  return try {
+   val connection=(URL(address).openConnection() as HttpURLConnection).apply {
+    connectTimeout=2500
+    readTimeout=9500
+    requestMethod="GET"
+    useCaches=false
+    setRequestProperty("Authorization","Bearer " + secret)
+   }
+   try {
+    val code=connection.responseCode
+    if(code !in 200..299) {
+     val body=runCatching{connection.errorStream?.bufferedReader()?.use{it.readText()}}.getOrNull().orEmpty()
+     throw IllegalStateException("HTTP " + code + if(body.isBlank()) "" else ": " + body.take(120))
+    }
+    val payload=connection.inputStream.bufferedReader().use{it.readText()}
+    val delayMs=JSONObject(payload).optLong("delay",0L)
+    require(delayMs>0L){"sing-box پاسخ تأخیر معتبر برنگرداند."}
+    TunnelProbeResult(tag,delayMs,null)
+   } finally {connection.disconnect()}
+  } catch(error:Throwable) {
+   TunnelProbeResult(tag,null,error.message?: "آزمون HTTPS از outbound ناموفق بود.")
   }
  }
 

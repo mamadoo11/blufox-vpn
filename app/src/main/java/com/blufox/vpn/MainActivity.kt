@@ -95,6 +95,8 @@ private val Red = Color(0xFFFF667A)
 class MainActivity : ComponentActivity() {
     private var pendingConfigJson: String? = null
     private var pendingServerName = ""
+    private var pendingProbeTags: ArrayList<String>? = null
+    private var pendingProbeSecret = ""
 
     private val vpnPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -113,7 +115,8 @@ class MainActivity : ComponentActivity() {
                 vpnState = vpnState,
                 onConnect = ::prepareConnection,
                 onDisconnect = ::disconnect,
-                onConnectConfig = ::prepareConfig
+                onConnectConfig = ::prepareConfig,
+                onTestServers = ::prepareTunnelProbe
             )
         }
     }
@@ -128,6 +131,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun prepareConfig(configJson: String, name: String) {
+        pendingProbeTags = null
+        pendingProbeSecret = ""
         runCatching { ProfileStore.save(this, name.ifBlank { "سرور بدون نام" }, configJson) }
         pendingConfigJson = configJson
         pendingServerName = name
@@ -139,13 +144,43 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun prepareTunnelProbe(servers: List<FreeProxyServer>) {
+        if (VpnRuntime.state.value.status != VpnStatus.DISCONNECTED) {
+            VpnRuntime.update(VpnStatus.ERROR, message = "برای آزمایش همه سرورها، ابتدا اتصال فعال را قطع کن.")
+            return
+        }
+        try {
+            val plan = FreeProxyRepository.buildTunnelProbePlan(servers)
+            pendingConfigJson = plan.configJson
+            pendingServerName = "آزمایش واقعی سرورها"
+            pendingProbeTags = ArrayList(plan.tags)
+            pendingProbeSecret = plan.secret
+            val permissionIntent = VpnService.prepare(this)
+            if (permissionIntent != null) {
+                vpnPermissionLauncher.launch(permissionIntent)
+            } else {
+                startPendingVpn()
+            }
+        } catch (error: Exception) {
+            VpnRuntime.update(VpnStatus.ERROR, message = error.message ?: "ساخت تنظیمات آزمایش ناموفق بود.")
+        }
+    }
+
     private fun startPendingVpn() {
         val config = pendingConfigJson ?: return
+        val probeTags = pendingProbeTags
+        val probeSecret = pendingProbeSecret
         val intent = Intent(this, BluFoxVpnService::class.java).apply {
-            action = BluFoxVpnService.ACTION_START
+            action = if (probeTags != null) BluFoxVpnService.ACTION_TEST_SERVERS else BluFoxVpnService.ACTION_START
             putExtra(BluFoxVpnService.EXTRA_CONFIG, config)
             putExtra(BluFoxVpnService.EXTRA_NAME, pendingServerName)
+            if (probeTags != null) {
+                putStringArrayListExtra(BluFoxVpnService.EXTRA_PROBE_TAGS, probeTags)
+                putExtra(BluFoxVpnService.EXTRA_PROBE_SECRET, probeSecret)
+            }
         }
+        pendingProbeTags = null
+        pendingProbeSecret = ""
         ContextCompat.startForegroundService(this, intent)
     }
 
@@ -159,7 +194,8 @@ private fun BluFoxApp(
     vpnState: VpnUiState,
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
-    onConnectConfig: (String, String) -> Unit
+    onConnectConfig: (String, String) -> Unit,
+    onTestServers: (List<FreeProxyServer>) -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var showConfigDialog by remember { mutableStateOf(false) }
@@ -220,6 +256,8 @@ private fun BluFoxApp(
                         onServers = { selectedTab = 1 }
                     )
                     1 -> ServersScreen(
+                        vpnState = vpnState,
+                        onTestAll = onTestServers,
                         onConnect = { config, name ->
                             onConnectConfig(config, name)
                             savedProfiles.clear()
@@ -500,6 +538,8 @@ private fun ServerSourceCard(onServers: () -> Unit) {
 
 @Composable
 private fun ServersScreen(
+    vpnState: VpnUiState,
+    onTestAll: (List<FreeProxyServer>) -> Unit,
     onConnect: (String, String) -> Unit,
     onSaveProfile: (String, String) -> Unit,
     savedProfiles: List<SavedVpnProfile>,
@@ -545,10 +585,13 @@ private fun ServersScreen(
     }
 
     val pingByTag = pingResults.associateBy { it.server.tag }
-    val displayedServers = if (pingResults.isNotEmpty()) {
-        pingResults.map { it.server }
-    } else {
-        servers.toList()
+    val tunnelByTag = vpnState.probeResults.associateBy { it.tag }
+    val displayedServers = when {
+        vpnState.probeResults.isNotEmpty() -> vpnState.probeResults.mapNotNull { result ->
+            servers.firstOrNull { it.tag == result.tag }
+        }
+        pingResults.isNotEmpty() -> pingResults.map { it.server }
+        else -> servers.toList()
     }
     val filteredServers = displayedServers.filter { server ->
         searchQuery.isBlank() ||
@@ -641,6 +684,32 @@ private fun ServersScreen(
             }
         }
 
+        Button(
+            onClick = { onTestAll(servers.toList()) },
+            enabled = servers.isNotEmpty() && !loading && !scanning && vpnState.status == VpnStatus.DISCONNECTED,
+            modifier = Modifier.fillMaxWidth().height(46.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF176C64))
+        ) {
+            Text(
+                when {
+                    vpnState.status == VpnStatus.CONNECTING && vpnState.serverName == "آزمایش واقعی سرورها" -> "در حال آزمایش تونل…"
+                    vpnState.status != VpnStatus.DISCONNECTED -> "برای آزمایش، ابتدا VPN را قطع کن"
+                    else -> "آزمایش واقعی همه سرورها با sing-box"
+                },
+                fontSize = 12.sp
+            )
+        }
+
+        if (vpnState.probeCompletedAt > 0L && vpnState.probeResults.isNotEmpty()) {
+            val passed = vpnState.probeResults.count { it.successful }
+            Text(
+                "نتیجه آزمون واقعی تونل: " + passed + " از " + vpnState.probeResults.size + " موفق • مرتب‌سازی بر اساس تأخیر HTTPS",
+                color = if (passed > 0) Green else Red,
+                fontSize = 11.sp
+            )
+        }
+
         if (scanning) {
             Text(
                 "در حال بررسی دسترسی TCP همه ${servers.size} سرور؛ حداکثر ۱۰ تست هم‌زمان.",
@@ -662,7 +731,7 @@ private fun ServersScreen(
             Text(successMessage, color = Green, fontSize = 11.sp)
         }
         Text(
-            "اعتبارسنجی Secure/Verified مربوط به آزمون سه‌مرحله‌ای منبع و فیلتر امنیتی گواهی است. پینگ این صفحه فقط اتصال TCP به پورت سرور را می‌سنجد؛ اتصال VPN فقط پس از عبور واقعی ترافیک تأیید می‌شود.",
+            "Secure/Verified فقط نتیجه بررسی منبع است. آزمون واقعی sing-box با HTTPS جداگانه انجام می‌شود؛ پینگ TCP به‌تنهایی اتصال VPN را ثابت نمی‌کند.",
             color = Muted,
             fontSize = 10.sp
         )
@@ -694,6 +763,7 @@ private fun ServersScreen(
             }
             items(filteredServers, key = { it.tag }) { server ->
                 val result = pingByTag[server.tag]
+                val tunnelResult = tunnelByTag[server.tag]
                 val selected = selectedServerTag == server.tag
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Panel),
@@ -702,6 +772,7 @@ private fun ServersScreen(
                         1.dp,
                         when {
                             selected -> Cyan
+                            tunnelResult?.successful == true -> Green.copy(alpha = 0.65f)
                             result?.reachable == true -> Green.copy(alpha = 0.45f)
                             else -> Color(0xFF203750)
                         }
@@ -737,10 +808,18 @@ private fun ServersScreen(
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 when {
+                                    tunnelResult?.successful == true -> {
+                                        Text((tunnelResult.latencyMs ?: 0L).toString() + " ms", color = Green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text("عبور HTTPS واقعی", color = Green, fontSize = 9.sp)
+                                    }
+                                    tunnelResult != null -> {
+                                        Text("تونل ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text(tunnelResult.error ?: "بدون پاسخ", color = Red, fontSize = 9.sp, maxLines = 2)
+                                    }
                                     result == null -> Text("تست نشده", color = Muted, fontSize = 10.sp)
                                     result.reachable -> {
                                         Text("${result.latencyMs} ms", color = Green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text("TCP در دسترس", color = Green, fontSize = 9.sp)
+                                        Text("فقط TCP", color = Amber, fontSize = 9.sp)
                                     }
                                     else -> {
                                         Text("ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)

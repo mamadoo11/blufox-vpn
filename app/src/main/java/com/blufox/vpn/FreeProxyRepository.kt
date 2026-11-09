@@ -40,6 +40,12 @@ data class ServerPingResult(
     val reachable: Boolean get() = latencyMs != null
 }
 
+data class TunnelProbePlan(
+    val configJson: String,
+    val secret: String,
+    val tags: List<String>
+)
+
 object FreeProxyRepository {
     private const val INDEX = "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/index.json"
     private const val INDEX_MIRROR = "https://cdn.jsdelivr.net/gh/0xRadikal/Free-v2ray-Configs@main/index.json"
@@ -249,6 +255,93 @@ object FreeProxyRepository {
         root.put("route", route)
         root.put("outbounds", JSONArray().put(selected).put(direct))
         return root.toString()
+    }
+
+
+    /**
+     * Builds one temporary TUN session containing the fresh candidate outbounds.
+     * The local-only Clash API then asks sing-box to probe each outbound directly.
+     */
+    fun buildTunnelProbePlan(servers: List<FreeProxyServer>): TunnelProbePlan {
+        require(servers.isNotEmpty()) { "فهرست سرورها برای آزمایش خالی است." }
+        require(servers.size <= MAX_SERVERS) { "تعداد سرورها از سقف مجاز بیشتر است." }
+        val sourceConfig = latestSourceConfig
+            ?: throw IllegalStateException("ابتدا فهرست تازه سرورها را دریافت کن.")
+        val root = JSONObject(sourceConfig)
+        val originalOutbounds = root.optJSONArray("outbounds") ?: JSONArray()
+        val sourceByTag = HashMap<String, JSONObject>()
+        val groupTags = HashSet<String>()
+        val retainedSystemOutbounds = mutableListOf<JSONObject>()
+
+        for (i in 0 until originalOutbounds.length()) {
+            val item = originalOutbounds.optJSONObject(i) ?: continue
+            val tag = item.optString("tag")
+            if (tag.isNotBlank()) sourceByTag[tag] = item
+            when (item.optString("type")) {
+                "selector", "urltest" -> if (tag.isNotBlank()) groupTags.add(tag)
+                "direct", "block", "dns" -> retainedSystemOutbounds.add(item)
+            }
+        }
+
+        val selectedOutbounds = mutableListOf<JSONObject>()
+        val tags = mutableListOf<String>()
+        for (server in servers.distinctBy { it.tag }) {
+            val outbound = sourceByTag[server.tag]
+                ?: throw IllegalStateException("سرور " + server.tag + " دیگر در منبع تازه وجود ندارد.")
+            require(outbound.optString("type").equals(server.type, true) &&
+                outbound.optString("server") == server.host &&
+                outbound.optInt("server_port") == server.port) {
+                "مشخصات سرور " + server.tag + " با منبع تازه یکسان نیست."
+            }
+            require(outbound.optString("detour").isBlank()) {
+                "سرور وابسته به outbound دیگر برای آزمون مستقل مناسب نیست: " + server.tag
+            }
+            selectedOutbounds.add(outbound)
+            tags.add(server.tag)
+        }
+        val firstTag = tags.first()
+        val outbounds = JSONArray()
+        selectedOutbounds.forEach { outbounds.put(it) }
+        retainedSystemOutbounds.distinctBy { it.optString("tag") }.forEach { outbounds.put(it) }
+        root.put("outbounds", outbounds)
+
+        val inbounds = root.optJSONArray("inbounds") ?: JSONArray()
+        val tun = (0 until inbounds.length())
+            .mapNotNull { inbounds.optJSONObject(it) }
+            .firstOrNull { it.optString("type") == "tun" }
+            ?: throw IllegalStateException("ورودی TUN در پروفایل منبع پیدا نشد.")
+        root.put("inbounds", JSONArray().put(tun))
+
+        root.optJSONObject("dns")?.optJSONArray("servers")?.let { dnsServers ->
+            for (i in 0 until dnsServers.length()) {
+                val dnsServer = dnsServers.optJSONObject(i) ?: continue
+                if (dnsServer.optString("detour") in groupTags) dnsServer.put("detour", firstTag)
+            }
+        }
+
+        val route = root.optJSONObject("route") ?: JSONObject()
+        route.optJSONArray("rules")?.let { rules ->
+            for (i in 0 until rules.length()) {
+                val rule = rules.optJSONObject(i) ?: continue
+                if (rule.optString("outbound") in groupTags) rule.put("outbound", firstTag)
+            }
+        }
+        route.put("final", firstTag)
+        root.put("route", route)
+
+        val secretBytes = ByteArray(32)
+        java.security.SecureRandom().nextBytes(secretBytes)
+        val secret = secretBytes.joinToString("") { "%02x".format(it) }
+        val experimental = root.optJSONObject("experimental") ?: JSONObject()
+        experimental.put(
+            "clash_api",
+            JSONObject()
+                .put("external_controller", "127.0.0.1:9090")
+                .put("secret", secret)
+        )
+        root.put("experimental", experimental)
+
+        return TunnelProbePlan(root.toString(), secret, tags)
     }
 
     private fun requireTrustedSourceUrl(raw: String): String {
