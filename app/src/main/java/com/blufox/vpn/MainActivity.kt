@@ -391,7 +391,7 @@ private fun HomeScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("سرورهای پیشنهادی", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Text("فعلاً کانفیگ خودت را وارد کن", color = Muted, fontSize = 11.sp)
+                    Text("۱۰۰ سرور تأییدشده و قابل آزمایش", color = Muted, fontSize = 11.sp)
                 }
                 TextButton(onClick = onServers) { Text("همه سرورها") }
             }
@@ -637,8 +637,8 @@ private fun ServersScreen(
 private fun ToolsScreen() {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("ابزارها", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        ToolRow(Icons.Outlined.Search, "آزمایش سرور", "در مرحله بعد اضافه می‌شود")
-        ToolRow(Icons.Filled.Speed, "آزمون سرعت", "بعد از اتصال و دریافت آمار")
+        ToolRow(Icons.Outlined.Search, "پینگ همه سرورها", "در صفحه سرورها؛ تست TCP و مرتب‌سازی بر اساس تأخیر")
+        ToolRow(Icons.Filled.Speed, "آزمون سرعت", "پس از اتصال واقعی تونل قابل انجام است")
         ToolRow(Icons.Outlined.Lock, "بررسی امنیت", "وضعیت TLS و REALITY از لینک سرور")
     }
 }
