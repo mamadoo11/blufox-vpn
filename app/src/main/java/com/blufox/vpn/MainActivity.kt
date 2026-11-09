@@ -62,6 +62,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,6 +74,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -124,6 +126,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun prepareConfig(configJson: String, name: String) {
+        runCatching { ProfileStore.save(this, name.ifBlank { "سرور بدون نام" }, configJson) }
         pendingConfigJson = configJson
         pendingServerName = name
         val permissionIntent = VpnService.prepare(this)
@@ -159,6 +162,8 @@ private fun BluFoxApp(
     var selectedTab by remember { mutableIntStateOf(0) }
     var showConfigDialog by remember { mutableStateOf(false) }
     var configLink by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val savedProfiles = remember { mutableStateListOf<SavedVpnProfile>().apply { addAll(ProfileStore.load(context)) } }
 
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -211,7 +216,15 @@ private fun BluFoxApp(
                         onDisconnect = onDisconnect,
                         onServers = { selectedTab = 1 }
                     )
-                    1 -> ServersScreen(onConnect = onConnectConfig)
+                    1 -> ServersScreen(
+                        onConnect = onConnectConfig,
+                        savedProfiles = savedProfiles,
+                        onSavedConnect = { onConnectConfig(it.configJson, it.name) },
+                        onDeleteSaved = { profile ->
+                            ProfileStore.delete(context, profile.id)
+                            savedProfiles.removeAll { it.id == profile.id }
+                        }
+                    )
                     2 -> ToolsScreen()
                     else -> SettingsScreen()
                 }
@@ -247,6 +260,9 @@ private fun BluFoxApp(
                         onClick = {
                             showConfigDialog = false
                             onConnect(configLink)
+                            savedProfiles.clear()
+                            savedProfiles.addAll(ProfileStore.load(context))
+                            configLink = ""
                         }
                     ) { Text("اتصال") }
                 },
@@ -422,7 +438,12 @@ private fun EmptyServerCard() {
 }
 
 @Composable
-private fun ServersScreen(onConnect: (String, String) -> Unit) {
+private fun ServersScreen(
+    onConnect: (String, String) -> Unit,
+    savedProfiles: List<SavedVpnProfile>,
+    onSavedConnect: (SavedVpnProfile) -> Unit,
+    onDeleteSaved: (SavedVpnProfile) -> Unit
+) {
     val scope = rememberCoroutineScope()
     val servers = remember { androidx.compose.runtime.mutableStateListOf<VpnGateServer>() }
     var loading by remember { mutableStateOf(false) }
@@ -432,8 +453,23 @@ private fun ServersScreen(onConnect: (String, String) -> Unit) {
         Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("سرورهای رایگان", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        Text("فهرست عمومی VPN Gate؛ سرورها ممکن است شلوغ یا موقتاً قطع باشند.", color = Muted, fontSize = 12.sp)
+        Text("سرورها", fontSize = 25.sp, fontWeight = FontWeight.Black)
+        Text("پروفایل‌های ذخیره‌شده روی گوشی و سرورهای عمومی VPN Gate", color = Muted, fontSize = 12.sp)
+        if (savedProfiles.isNotEmpty()) {
+            Text("سرورهای ذخیره‌شده (${savedProfiles.size})", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            savedProfiles.forEach { profile ->
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(profile.name, fontWeight = FontWeight.Bold)
+                        Text(profile.engineLabel, color = Muted, fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onSavedConnect(profile) }, modifier = Modifier.weight(1f)) { Text("اتصال") }
+                            TextButton(onClick = { onDeleteSaved(profile) }) { Text("حذف", color = Red) }
+                        }
+                    }
+                }
+            }
+        }
         Button(
             onClick = {
                 scope.launch {
