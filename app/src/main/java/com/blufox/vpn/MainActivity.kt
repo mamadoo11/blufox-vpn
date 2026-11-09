@@ -1,6 +1,7 @@
 package com.blufox.vpn
 
 import android.content.Intent
+import android.text.format.DateFormat
 import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -59,6 +60,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -479,12 +481,29 @@ private fun ServersScreen(
     var loading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
+    LaunchedEffect(Unit) {
+        if (servers.isEmpty() && !loading) {
+            loading = true
+            errorMessage = ""
+            try {
+                val found = VpnGateRepository.fetchServers(40)
+                servers.clear()
+                servers.addAll(found)
+                if (found.isEmpty()) errorMessage = "فعلاً سروری از منابع دریافت نشد."
+            } catch (error: Exception) {
+                errorMessage = error.message ?: "دریافت فهرست سرورها ناموفق بود."
+            } finally {
+                loading = false
+            }
+        }
+    }
+
     Column(
         Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("سرورها", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        Text("پروفایل‌های ذخیره‌شده روی گوشی و سرورهای عمومی VPN Gate", color = Muted, fontSize = 12.sp)
+        Text("پروفایل‌های گوشی و سرورهای رایگان داوطلبانه VPN Gate؛ فهرست هنگام ورود خودکار به‌روزرسانی می‌شود.", color = Muted, fontSize = 12.sp)
         if (savedProfiles.isNotEmpty()) {
             Text("سرورهای ذخیره‌شده (${savedProfiles.size})", fontSize = 17.sp, fontWeight = FontWeight.Bold)
             savedProfiles.forEach { profile ->
@@ -523,7 +542,7 @@ private fun ServersScreen(
         ) {
             Icon(Icons.Outlined.Search, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text(if (loading) "در حال دریافت سرورها…" else "جست‌وجوی سرورهای رایگان")
+            Text(if (loading) "در حال دریافت از چند منبع…" else "به‌روزرسانی سرورهای رایگان")
         }
         if (errorMessage.isNotBlank()) {
             Text(errorMessage, color = Red, fontSize = 12.sp)
@@ -555,9 +574,11 @@ private fun ServersScreen(
                                 Text(server.country, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                 Text(server.ip, color = Muted, fontSize = 11.sp)
                             }
-                            Text(if (server.pingMs == Long.MAX_VALUE) "—" else "${server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
+                            Text(if (server.pingMs == Long.MAX_VALUE) "پینگ —" else "پینگ منبع: ${server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
                         }
                         Text("سرعت اعلامی: ${server.speedLabel}   •   کاربران: ${server.sessions}", color = Muted, fontSize = 11.sp)
+                        Text("منبع: ${server.sourceLabel}  •  آخرین دریافت: ${DateFormat.format("HH:mm", server.fetchedAt)}", color = Muted, fontSize = 10.sp)
+                        Text("فایل و گواهی اولیه بررسی شد؛ سالم‌بودن سرور فقط با اتصال واقعی مشخص می‌شود.", color = Amber, fontSize = 10.sp)
                         Button(
                             onClick = {
                                 try {
