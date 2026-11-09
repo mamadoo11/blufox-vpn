@@ -42,10 +42,10 @@ data class ServerPingResult(
 
 object FreeProxyRepository {
     private const val INDEX = "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/index.json"
+    private const val INDEX_MIRROR = "https://cdn.jsdelivr.net/gh/0xRadikal/Free-v2ray-Configs@main/index.json"
     private const val MAX_SERVERS = 100
     private const val MAX_SOURCE_AGE_SECONDS = 60 * 60L
     private const val MAX_FUTURE_SKEW_SECONDS = 5 * 60L
-    private const val SOURCE_REPOSITORY = "https://github.com/0xRadikal/Free-v2ray-Configs"
     private val supportedTypes = setOf("vless", "vmess", "trojan", "shadowsocks")
 
     @Volatile private var latestSourceConfig: String? = null
@@ -65,7 +65,9 @@ object FreeProxyRepository {
         verifiedCount = 0
 
         // The upstream index is the contract for URLs, counts and freshness.
-        val index = JSONObject(downloadText(INDEX, 100_000))
+        val indexRaw = runCatching { downloadText(INDEX, 100_000) }.getOrNull().orEmpty()
+            .ifBlank { downloadText(INDEX_MIRROR, 100_000) }
+        val index = JSONObject(indexRaw)
         val updatedAt = index.optString("updated_at").trim()
         require(updatedAt.isNotBlank()) { "زمان به‌روزرسانی منبع مشخص نیست؛ سرورها فعال نمی‌شوند." }
         val sourceInstant = runCatching { Instant.parse(updatedAt) }
