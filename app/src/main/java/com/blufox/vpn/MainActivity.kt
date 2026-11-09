@@ -477,119 +477,155 @@ private fun ServersScreen(
     onDeleteSaved: (SavedVpnProfile) -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val servers = remember { androidx.compose.runtime.mutableStateListOf<VpnGateServer>() }
+    val servers = remember { mutableStateListOf<FreeProxyServer>() }
+    val pingResults = remember { mutableStateListOf<ServerPingResult>() }
     var loading by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    var sourceUpdatedAt by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
-        if (servers.isEmpty() && !loading) {
-            loading = true
-            errorMessage = ""
-            try {
-                val found = VpnGateRepository.fetchServers(40)
-                servers.clear()
-                servers.addAll(found)
-                if (found.isEmpty()) errorMessage = "فعلاً سروری از منابع دریافت نشد."
-            } catch (error: Exception) {
-                errorMessage = error.message ?: "دریافت فهرست سرورها ناموفق بود."
-            } finally {
-                loading = false
-            }
+    suspend fun refreshServers() {
+        loading = true
+        errorMessage = ""
+        try {
+            val found = FreeProxyRepository.fetchServers(100)
+            servers.clear()
+            servers.addAll(found)
+            pingResults.clear()
+            sourceUpdatedAt = FreeProxyRepository.lastUpdatedAt
+        } catch (error: Exception) {
+            errorMessage = error.message ?: "دریافت فهرست سرورها ناموفق بود."
+        } finally {
+            loading = false
         }
     }
 
+    LaunchedEffect(Unit) {
+        if (servers.isEmpty() && !loading) refreshServers()
+    }
+
+    val pingByTag = pingResults.associateBy { it.server.tag }
+    val displayedServers = if (pingResults.isNotEmpty()) {
+        pingResults.map { it.server }
+    } else {
+        servers.toList()
+    }
+    val reachableCount = pingResults.count { it.reachable }
+
     Column(
         Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("سرورها", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        Text("پروفایل‌های گوشی و سرورهای رایگان داوطلبانه VPN Gate؛ فهرست هنگام ورود خودکار به‌روزرسانی می‌شود.", color = Muted, fontSize = 12.sp)
+        Text("منبع جدید: فهرست تأییدشده VLESS / VMess / Trojan / Shadowsocks؛ به‌روزرسانی حدود هر ۱۵ دقیقه.", color = Muted, fontSize = 12.sp)
+        if (sourceUpdatedAt.isNotBlank()) {
+            Text("آخرین به‌روزرسانی منبع: $${sourceUpdatedAt} UTC  •  $${servers.size} سرور", color = Cyan, fontSize = 10.sp)
+        }
+
         if (savedProfiles.isNotEmpty()) {
-            Text("سرورهای ذخیره‌شده (${savedProfiles.size})", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("پروفایل‌های ذخیره‌شده ($${savedProfiles.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             savedProfiles.forEach { profile ->
-                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(profile.name, fontWeight = FontWeight.Bold)
-                        Text(profile.engineLabel, color = Muted, fontSize = 11.sp)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { onSavedConnect(profile) }, modifier = Modifier.weight(1f)) { Text("اتصال") }
-                            TextButton(onClick = { onDeleteSaved(profile) }) { Text("حذف", color = Red) }
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(profile.name, fontWeight = FontWeight.Bold)
+                            Text(profile.engineLabel, color = Muted, fontSize = 10.sp)
                         }
+                        TextButton(onClick = { onSavedConnect(profile) }) { Text("اتصال") }
+                        TextButton(onClick = { onDeleteSaved(profile) }) { Text("حذف", color = Red) }
                     }
                 }
             }
         }
-        Button(
-            onClick = {
-                scope.launch {
-                    loading = true
-                    errorMessage = ""
-                    try {
-                        val found = VpnGateRepository.fetchServers(40)
-                        servers.clear()
-                        servers.addAll(found)
-                        if (found.isEmpty()) errorMessage = "فعلاً سروری از منبع دریافت نشد. دوباره تلاش کن."
-                    } catch (error: Exception) {
-                        errorMessage = error.message ?: "دریافت فهرست سرورها ناموفق بود."
-                    } finally {
-                        loading = false
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { scope.launch { refreshServers() } },
+                enabled = !loading && !scanning,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(if (loading) "دریافت…" else "به‌روزرسانی سرورها", fontSize = 12.sp)
+            }
+            Button(
+                onClick = {
+                    scope.launch {
+                        scanning = true
+                        errorMessage = ""
+                        pingResults.clear()
+                        try {
+                            val results = FreeProxyRepository.pingAll(servers.toList())
+                            pingResults.addAll(results)
+                        } catch (error: Exception) {
+                            errorMessage = error.message ?: "آزمایش پینگ انجام نشد."
+                        } finally {
+                            scanning = false
+                        }
                     }
-                }
-            },
-            enabled = !loading,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Icon(Icons.Outlined.Search, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (loading) "در حال دریافت از چند منبع…" else "به‌روزرسانی سرورهای رایگان")
+                },
+                enabled = servers.isNotEmpty() && !loading && !scanning,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF176C64))
+            ) {
+                Text(if (scanning) "در حال پینگ…" else "پینگ همه سرورها", fontSize = 12.sp)
+            }
+        }
+
+        if (scanning) {
+            Text("در حال بررسی دسترسی TCP همه $${servers.size} سرور؛ حداکثر ۱۰ تست هم‌زمان.", color = Amber, fontSize = 11.sp)
+        }
+        if (pingResults.isNotEmpty()) {
+            Text("قابل دسترس از این اینترنت: $${reachableCount} از $${pingResults.size}  •  مرتب‌شده از کمترین پینگ", color = if (reachableCount > 0) Green else Red, fontSize = 11.sp)
         }
         if (errorMessage.isNotBlank()) {
-            Text(errorMessage, color = Red, fontSize = 12.sp)
+            Text(errorMessage, color = Red, fontSize = 11.sp)
         }
-        if (servers.isEmpty() && !loading && errorMessage.isBlank()) {
-            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-                Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.Dns, contentDescription = null, tint = Cyan, modifier = Modifier.size(36.dp))
-                    Spacer(Modifier.height(10.dp))
-                    Text("هنوز سروری دریافت نشده", fontWeight = FontWeight.Bold)
-                    Text("برای دریافت فهرست زنده، دکمه جست‌وجو را بزن.", color = Muted, fontSize = 12.sp)
-                }
-            }
-        }
+        Text("پینگ این بخش زمان اتصال TCP به پورت سرور است؛ تضمین اتصال VPN نیست. پس از انتخاب، خود تونل هم جداگانه آزمایش می‌شود.", color = Muted, fontSize = 10.sp)
+
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 20.dp)
         ) {
-            items(servers, key = { it.ip + ":" + it.countryCode }) { server ->
+            items(displayedServers, key = { it.tag }) { server ->
+                val result = pingByTag[server.tag]
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Panel),
-                    shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.dp, Color(0xFF203750))
+                    shape = RoundedCornerShape(17.dp),
+                    border = BorderStroke(1.dp, if (result?.reachable == true) Green.copy(alpha = 0.45f) else Color(0xFF203750))
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(server.country, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                Text(server.ip, color = Muted, fontSize = 11.sp)
+                                Text(server.tag, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 2)
+                                Text("$${server.type.uppercase()}  •  $${server.host}:$${server.port}", color = Muted, fontSize = 10.sp)
                             }
-                            Text(if (server.pingMs == Long.MAX_VALUE) "پینگ —" else "پینگ منبع: ${server.pingMs} ms", color = Cyan, fontWeight = FontWeight.Bold)
+                            Column(horizontalAlignment = Alignment.End) {
+                                when {
+                                    result == null -> Text("تست نشده", color = Muted, fontSize = 10.sp)
+                                    result.reachable -> {
+                                        Text("$${result.latencyMs} ms", color = Green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text("TCP در دسترس", color = Green, fontSize = 9.sp)
+                                    }
+                                    else -> {
+                                        Text("قطع / ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text("TCP ناموفق", color = Red, fontSize = 9.sp)
+                                    }
+                                }
+                            }
                         }
-                        Text("سرعت اعلامی: ${server.speedLabel}   •   کاربران: ${server.sessions}", color = Muted, fontSize = 11.sp)
-                        Text("منبع: ${server.sourceLabel}  •  آخرین دریافت: ${DateFormat.format("HH:mm", server.fetchedAt)}", color = Muted, fontSize = 10.sp)
-                        Text("فایل و گواهی اولیه بررسی شد؛ سالم‌بودن سرور فقط با اتصال واقعی مشخص می‌شود.", color = Amber, fontSize = 10.sp)
                         Button(
                             onClick = {
                                 try {
-                                    onConnect(VpnGateConfigBuilder.build(server), server.displayName)
+                                    onConnect(FreeProxyRepository.buildSingleServerConfig(server), server.tag)
                                 } catch (error: Exception) {
-                                    errorMessage = error.message ?: "تنظیمات این سرور پشتیبانی نمی‌شود."
+                                    errorMessage = error.message ?: "ساخت تنظیمات سرور ناموفق بود."
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth().height(44.dp),
-                            shape = RoundedCornerShape(13.dp)
-                        ) { Text("اتصال به این سرور") }
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("اتصال به این سرور", fontSize = 12.sp) }
                     }
                 }
             }
