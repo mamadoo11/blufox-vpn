@@ -212,12 +212,17 @@ private fun BluFoxApp(
                 when (selectedTab) {
                     0 -> HomeScreen(
                         vpnState = vpnState,
+                        savedProfileCount = savedProfiles.size,
                         onConnect = { showConfigDialog = true },
                         onDisconnect = onDisconnect,
                         onServers = { selectedTab = 1 }
                     )
                     1 -> ServersScreen(
-                        onConnect = onConnectConfig,
+                        onConnect = { config, name ->
+                            onConnectConfig(config, name)
+                            savedProfiles.clear()
+                            savedProfiles.addAll(ProfileStore.load(context))
+                        },
                         savedProfiles = savedProfiles,
                         onSavedConnect = { onConnectConfig(it.configJson, it.name) },
                         onDeleteSaved = { profile ->
@@ -277,6 +282,7 @@ private fun BluFoxApp(
 @Composable
 private fun HomeScreen(
     vpnState: VpnUiState,
+    savedProfileCount: Int,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onServers: () -> Unit
@@ -378,6 +384,7 @@ private fun HomeScreen(
                 MetricCard("دانلود", "پس از افزودن آمار", Icons.Outlined.ArrowDownward, Modifier.weight(1f))
             }
         }
+        item { EngineStatusCard(savedProfileCount) }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -387,6 +394,29 @@ private fun HomeScreen(
                 TextButton(onClick = onServers) { Text("همه سرورها") }
             }
             EmptyServerCard()
+        }
+    }
+}
+
+
+@Composable
+private fun EngineStatusCard(savedProfileCount: Int) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Panel),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, Color(0xFF203750))
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Shield, contentDescription = null, tint = Cyan, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(9.dp))
+                Text("موتور اتصال", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.weight(1f))
+                Text("فعال", color = Green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            Text("sing-box • موتور اجرایی فعلی", color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text("WARP و Psiphon هنوز به‌عنوان موتور واقعی به سرویس VPN متصل نشده‌اند؛ تا زمان تکمیل و تست، انتخاب آن‌ها فعال نمی‌شود.", color = Muted, fontSize = 11.sp)
+            Text("پروفایل‌های ذخیره‌شده: $savedProfileCount", color = Cyan, fontSize = 12.sp)
         }
     }
 }
