@@ -145,7 +145,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun prepareTunnelProbe(servers: List<FreeProxyServer>) {
-        if (VpnRuntime.state.value.status != VpnStatus.DISCONNECTED) {
+        if (VpnRuntime.state.value.status == VpnStatus.CONNECTED ||
+            VpnRuntime.state.value.status == VpnStatus.CONNECTING) {
             VpnRuntime.update(VpnStatus.ERROR, message = "برای آزمایش همه سرورها، ابتدا اتصال فعال را قطع کن.")
             return
         }
@@ -566,6 +567,10 @@ private fun ServersScreen(
             servers.clear()
             servers.addAll(found)
             pingResults.clear()
+            if (VpnRuntime.state.value.status == VpnStatus.DISCONNECTED ||
+                VpnRuntime.state.value.status == VpnStatus.ERROR) {
+                VpnRuntime.update(VpnStatus.DISCONNECTED, message = "فهرست سرورها به‌روز شد.")
+            }
             sourceUpdatedAt = FreeProxyRepository.lastUpdatedAt
             if (found.none { it.tag == selectedServerTag }) selectedServerTag = ""
         } catch (error: Exception) {
@@ -686,7 +691,8 @@ private fun ServersScreen(
 
         Button(
             onClick = { onTestAll(servers.toList()) },
-            enabled = servers.isNotEmpty() && !loading && !scanning && vpnState.status == VpnStatus.DISCONNECTED,
+            enabled = servers.isNotEmpty() && !loading && !scanning &&
+                (vpnState.status == VpnStatus.DISCONNECTED || vpnState.status == VpnStatus.ERROR),
             modifier = Modifier.fillMaxWidth().height(46.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF176C64))
@@ -694,7 +700,8 @@ private fun ServersScreen(
             Text(
                 when {
                     vpnState.status == VpnStatus.CONNECTING && vpnState.serverName == "آزمایش واقعی سرورها" -> "در حال آزمایش تونل…"
-                    vpnState.status != VpnStatus.DISCONNECTED -> "برای آزمایش، ابتدا VPN را قطع کن"
+                    vpnState.status == VpnStatus.CONNECTED -> "ابتدا اتصال VPN را قطع کن"
+                    vpnState.status == VpnStatus.CONNECTING -> "در حال اتصال…"
                     else -> "آزمایش واقعی همه سرورها با sing-box"
                 },
                 fontSize = 12.sp
