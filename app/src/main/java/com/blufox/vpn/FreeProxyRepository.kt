@@ -40,11 +40,15 @@ object FreeProxyRepository {
     private const val INDEX = "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/index.json"
     private const val MAX_SERVERS = 100
     private val supportedTypes = setOf("vless", "vmess", "trojan", "shadowsocks")
+    @Volatile private var latestSourceConfig: String? = null
+    @Volatile var lastUpdatedAt: String = ""
+        private set
 
     suspend fun fetchServers(limit: Int = MAX_SERVERS): List<FreeProxyServer> = withContext(Dispatchers.IO) {
         require(limit in 1..MAX_SERVERS)
         val raw = downloadText(PRIMARY, 2_000_000).ifBlank { downloadText(MIRROR, 2_000_000) }
         require(raw.isNotBlank()) { "فهرست سرورهای جایگزین دریافت نشد." }
+        latestSourceConfig = raw
         val root = JSONObject(raw)
         val updatedAt = runCatching { JSONObject(downloadText(INDEX, 100_000)).optString("updated_at") }.getOrDefault("")
         val outbounds = root.optJSONArray("outbounds") ?: JSONArray()
@@ -57,6 +61,7 @@ object FreeProxyRepository {
             .mapNotNull { outbounds.optJSONObject(it) }
             .firstOrNull { it.optString("type") == "urltest" }
             ?: throw IllegalStateException("گروه سرورهای تأییدشده در منبع پیدا نشد.")
+        lastUpdatedAt = updatedAt
         val tags = autoGroup.optJSONArray("outbounds") ?: JSONArray()
         val result = mutableListOf<FreeProxyServer>()
         val seen = HashSet<String>()
@@ -101,7 +106,9 @@ object FreeProxyRepository {
         }.awaitAll().sortedWith(compareBy<ServerPingResult> { it.latencyMs == null }.thenBy { it.latencyMs ?: Long.MAX_VALUE })
     }
 
-    fun buildSingleServerConfig(server: FreeProxyServer, sourceConfig: String): String {
+    fun buildSingleServerConfig(server: FreeProxyServer): String {
+        val sourceConfig = latestSourceConfig
+            ?: throw IllegalStateException("ابتدا فهرست سرورها را به‌روزرسانی کن.")
         val root = JSONObject(sourceConfig)
         val inbounds = root.optJSONArray("inbounds") ?: JSONArray()
         val tun = (0 until inbounds.length())
