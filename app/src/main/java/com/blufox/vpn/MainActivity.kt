@@ -386,23 +386,35 @@ private fun HomeScreen(
                 MetricCard("دانلود", "پس از افزودن آمار", Icons.Outlined.ArrowDownward, Modifier.weight(1f))
             }
         }
-        item { EngineStatusCard(savedProfileCount) }
+        item { EngineStatusCard(savedProfileCount, vpnState) }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("سرورهای پیشنهادی", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Text("۱۰۰ سرور تأییدشده و قابل آزمایش", color = Muted, fontSize = 11.sp)
+                    Text("فهرست عمومی Verified؛ اعتبار هر سرور جداگانه نمایش داده می‌شود", color = Muted, fontSize = 11.sp)
                 }
                 TextButton(onClick = onServers) { Text("همه سرورها") }
             }
-            EmptyServerCard()
+            ServerSourceCard(onServers)
         }
     }
 }
 
 
 @Composable
-private fun EngineStatusCard(savedProfileCount: Int) {
+private fun EngineStatusCard(savedProfileCount: Int, vpnState: VpnUiState) {
+    val engineStatus = when (vpnState.status) {
+        VpnStatus.CONNECTED -> "تونل تأییدشده"
+        VpnStatus.CONNECTING -> "در حال راه‌اندازی"
+        VpnStatus.ERROR -> "خطا در موتور"
+        VpnStatus.DISCONNECTED -> "آماده"
+    }
+    val engineColor = when (vpnState.status) {
+        VpnStatus.CONNECTED -> Green
+        VpnStatus.CONNECTING -> Amber
+        VpnStatus.ERROR -> Red
+        VpnStatus.DISCONNECTED -> Cyan
+    }
     Card(
         colors = CardDefaults.cardColors(containerColor = Panel),
         shape = RoundedCornerShape(20.dp),
@@ -414,11 +426,11 @@ private fun EngineStatusCard(savedProfileCount: Int) {
                 Spacer(Modifier.width(9.dp))
                 Text("موتور اتصال", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(Modifier.weight(1f))
-                Text("فعال", color = Green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(engineStatus, color = engineColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
-            Text("sing-box • موتور اجرایی فعلی", color = Color.White, fontWeight = FontWeight.SemiBold)
-            Text("WARP و Psiphon هنوز به‌عنوان موتور واقعی به سرویس VPN متصل نشده‌اند؛ تا زمان تکمیل و تست، انتخاب آن‌ها فعال نمی‌شود.", color = Muted, fontSize = 11.sp)
-            Text("پروفایل‌های ذخیره‌شده: $savedProfileCount", color = Cyan, fontSize = 12.sp)
+            Text("sing-box • تنها موتور متصل به Android VpnService", color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text("WARP و Psiphon تا زمان ادغام تونل واقعی و تأیید عبور ترافیک غیرفعال هستند.", color = Muted, fontSize = 11.sp)
+            Text("پروفایل‌های ذخیره‌شده: ${savedProfileCount}", color = Cyan, fontSize = 12.sp)
         }
     }
 }
@@ -452,19 +464,31 @@ private fun MetricCard(
 }
 
 @Composable
-private fun EmptyServerCard() {
+private fun ServerSourceCard(onServers: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Panel),
         shape = RoundedCornerShape(20.dp),
         border = BorderStroke(1.dp, Color(0xFF203750))
     ) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Cloud, contentDescription = null, tint = Muted, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("هنوز سروری اضافه نشده", fontWeight = FontWeight.SemiBold)
-                Text("بعد از واردکردن لینک، اینجا فهرست سرورها را مدیریت می‌کنیم.", color = Muted, fontSize = 11.sp)
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Cloud, contentDescription = null, tint = Cyan, modifier = Modifier.size(25.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("فهرست سرورهای رایگان", fontWeight = FontWeight.SemiBold)
             }
+            Text(
+                "منبع Verified هر کانفیگ را پیش از انتشار در سه دور درخواست HTTP واقعی آزمایش می‌کند. این نتیجه مربوط به شبکه آزمایش منبع است؛ دسترسی از اینترنت تو جداگانه سنجیده می‌شود.",
+                color = Muted,
+                fontSize = 11.sp
+            )
+            Button(
+                onClick = onServers,
+                modifier = Modifier.fillMaxWidth().height(42.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("نمایش و جست‌وجوی سرورها") }
         }
     }
 }
@@ -483,6 +507,8 @@ private fun ServersScreen(
     var scanning by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var sourceUpdatedAt by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedServerTag by remember { mutableStateOf("") }
 
     suspend fun refreshServers() {
         loading = true
@@ -493,7 +519,13 @@ private fun ServersScreen(
             servers.addAll(found)
             pingResults.clear()
             sourceUpdatedAt = FreeProxyRepository.lastUpdatedAt
+            if (found.none { it.tag == selectedServerTag }) selectedServerTag = ""
         } catch (error: Exception) {
+            // Never leave a previously fetched, now potentially stale list connectable after refresh fails.
+            servers.clear()
+            pingResults.clear()
+            sourceUpdatedAt = ""
+            selectedServerTag = ""
             errorMessage = error.message ?: "دریافت فهرست سرورها ناموفق بود."
         } finally {
             loading = false
@@ -510,20 +542,49 @@ private fun ServersScreen(
     } else {
         servers.toList()
     }
+    val filteredServers = displayedServers.filter { server ->
+        searchQuery.isBlank() ||
+            server.tag.contains(searchQuery, ignoreCase = true) ||
+            server.host.contains(searchQuery, ignoreCase = true) ||
+            server.type.contains(searchQuery, ignoreCase = true) ||
+            server.countryCode.contains(searchQuery, ignoreCase = true)
+    }
     val reachableCount = pingResults.count { it.reachable }
+    val selectedServerName = servers.firstOrNull { it.tag == selectedServerTag }?.displayName
 
     Column(
         Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("سرورها", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        Text("منبع جدید: فهرست تأییدشده VLESS / VMess / Trojan / Shadowsocks؛ به‌روزرسانی حدود هر ۱۵ دقیقه.", color = Muted, fontSize = 12.sp)
+        Text(
+            "منبع: 0xRadikal • فقط دسته Verified سازگار با sing-box؛ هر سرور پس از سه آزمون HTTP منبع فهرست می‌شود.",
+            color = Muted,
+            fontSize = 11.sp
+        )
         if (sourceUpdatedAt.isNotBlank()) {
-            Text("آخرین به‌روزرسانی منبع: $${sourceUpdatedAt} UTC  •  $${servers.size} سرور", color = Cyan, fontSize = 10.sp)
+            Text(
+                "آخرین به‌روزرسانی منبع: ${sourceUpdatedAt} UTC • نمایش ${servers.size} مورد از ${FreeProxyRepository.verifiedCount} سرور Verified",
+                color = Cyan,
+                fontSize = 10.sp
+            )
+        }
+
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("جست‌وجوی نام، کشور، نوع یا IP") },
+            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) }
+        )
+
+        if (selectedServerName != null) {
+            Text("سرور انتخاب‌شده: ${selectedServerName}", color = Cyan, fontSize = 11.sp)
         }
 
         if (savedProfiles.isNotEmpty()) {
-            Text("پروفایل‌های ذخیره‌شده ($${savedProfiles.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("پروفایل‌های ذخیره‌شده (${savedProfiles.size})", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             savedProfiles.forEach { profile ->
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -573,59 +634,135 @@ private fun ServersScreen(
         }
 
         if (scanning) {
-            Text("در حال بررسی دسترسی TCP همه $${servers.size} سرور؛ حداکثر ۱۰ تست هم‌زمان.", color = Amber, fontSize = 11.sp)
+            Text(
+                "در حال بررسی دسترسی TCP همه ${servers.size} سرور؛ حداکثر ۱۰ تست هم‌زمان.",
+                color = Amber,
+                fontSize = 11.sp
+            )
         }
         if (pingResults.isNotEmpty()) {
-            Text("قابل دسترس از این اینترنت: $${reachableCount} از $${pingResults.size}  •  مرتب‌شده از کمترین پینگ", color = if (reachableCount > 0) Green else Red, fontSize = 11.sp)
+            Text(
+                "قابل دسترس از این اینترنت: ${reachableCount} از ${pingResults.size} • مرتب‌شده از کمترین تأخیر TCP",
+                color = if (reachableCount > 0) Green else Red,
+                fontSize = 11.sp
+            )
         }
         if (errorMessage.isNotBlank()) {
             Text(errorMessage, color = Red, fontSize = 11.sp)
         }
-        Text("پینگ این بخش زمان اتصال TCP به پورت سرور است؛ تضمین اتصال VPN نیست. پس از انتخاب، خود تونل هم جداگانه آزمایش می‌شود.", color = Muted, fontSize = 10.sp)
+        Text(
+            "اعتبارسنجی Verified مربوط به آزمون سه‌مرحله‌ای منبع است. پینگ این صفحه فقط اتصال TCP به پورت سرور را می‌سنجد؛ اتصال VPN فقط پس از عبور واقعی ترافیک تأیید می‌شود.",
+            color = Muted,
+            fontSize = 10.sp
+        )
 
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(9.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 20.dp)
         ) {
-            items(displayedServers, key = { it.tag }) { server ->
+            if (filteredServers.isEmpty()) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Panel),
+                        shape = RoundedCornerShape(17.dp)
+                    ) {
+                        Text(
+                            when {
+                                loading -> "در حال دریافت فهرست تازه سرورها…"
+                                searchQuery.isNotBlank() -> "سروری با این عبارت پیدا نشد."
+                                errorMessage.isNotBlank() -> "فهرست فعلاً در دسترس نیست؛ سرور قدیمی برای اتصال نگه داشته نمی‌شود."
+                                else -> "در منبع فعلی سرور سازگار و تازه‌ای پیدا نشد."
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(18.dp),
+                            color = Muted,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+            items(filteredServers, key = { it.tag }) { server ->
                 val result = pingByTag[server.tag]
+                val selected = selectedServerTag == server.tag
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Panel),
                     shape = RoundedCornerShape(17.dp),
-                    border = BorderStroke(1.dp, if (result?.reachable == true) Green.copy(alpha = 0.45f) else Color(0xFF203750))
+                    border = BorderStroke(
+                        1.dp,
+                        when {
+                            selected -> Cyan
+                            result?.reachable == true -> Green.copy(alpha = 0.45f)
+                            else -> Color(0xFF203750)
+                        }
+                    )
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(13.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "${server.flagEmoji.ifBlank { "🌐" }} ${server.countryCode.ifBlank { "مکان نامشخص" }}",
+                                color = Cyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                "Verified • ${server.validationRounds}/3 HTTP",
+                                color = Green,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(server.tag, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 2)
-                                Text("$${server.type.uppercase()}  •  $${server.host}:$${server.port}", color = Muted, fontSize = 10.sp)
+                                Text(server.displayName, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 2)
+                                Text(
+                                    "${server.type.uppercase()} • ${server.host}:${server.port}",
+                                    color = Muted,
+                                    fontSize = 10.sp
+                                )
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 when {
                                     result == null -> Text("تست نشده", color = Muted, fontSize = 10.sp)
                                     result.reachable -> {
-                                        Text("$${result.latencyMs} ms", color = Green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text("${result.latencyMs} ms", color = Green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                         Text("TCP در دسترس", color = Green, fontSize = 9.sp)
                                     }
                                     else -> {
-                                        Text("قطع / ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text("ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                         Text("TCP ناموفق", color = Red, fontSize = 9.sp)
                                     }
                                 }
                             }
                         }
-                        Button(
-                            onClick = {
-                                try {
-                                    onConnect(FreeProxyRepository.buildSingleServerConfig(server), server.tag)
-                                } catch (error: Exception) {
-                                    errorMessage = error.message ?: "ساخت تنظیمات سرور ناموفق بود."
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(40.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("اتصال به این سرور", fontSize = 12.sp) }
+                        Text(
+                            "منبع: ${server.sourceLabel} • آخرین به‌روزرسانی: ${server.upstreamUpdatedAt} UTC",
+                            color = Muted,
+                            fontSize = 9.sp
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(
+                                onClick = { selectedServerTag = server.tag },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(if (selected) "انتخاب شده" else "انتخاب")
+                            }
+                            Button(
+                                onClick = {
+                                    selectedServerTag = server.tag
+                                    try {
+                                        onConnect(FreeProxyRepository.buildSingleServerConfig(server), server.tag)
+                                    } catch (error: Exception) {
+                                        errorMessage = error.message ?: "ساخت تنظیمات سرور ناموفق بود."
+                                    }
+                                },
+                                modifier = Modifier.weight(1.4f).height(40.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("اتصال", fontSize = 12.sp) }
+                        }
                     }
                 }
             }
