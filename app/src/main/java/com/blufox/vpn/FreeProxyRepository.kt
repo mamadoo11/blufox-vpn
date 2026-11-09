@@ -27,7 +27,7 @@ data class FreeProxyServer(
     val outboundJson: String,
     val upstreamUpdatedAt: String,
     val validationRounds: Int = 3,
-    val sourceLabel: String = "0xRadikal • Verified"
+    val sourceLabel: String = "0xRadikal • Secure/Verified"
 ) {
     val displayName: String get() = tag
 }
@@ -55,14 +55,14 @@ object FreeProxyRepository {
         private set
 
     @Volatile
-    var verifiedCount: Int = 0
+    var secureCount: Int = 0
         private set
 
     suspend fun fetchServers(limit: Int = MAX_SERVERS): List<FreeProxyServer> = withContext(Dispatchers.IO) {
         require(limit in 1..MAX_SERVERS)
         latestSourceConfig = null
         lastUpdatedAt = ""
-        verifiedCount = 0
+        secureCount = 0
 
         // The upstream index is the contract for URLs, counts and freshness.
         val indexRaw = runCatching { downloadText(INDEX, 100_000) }.getOrNull().orEmpty()
@@ -77,12 +77,12 @@ object FreeProxyRepository {
             "اعتبارسنجی منبع بیش از ۶۰ دقیقه قدیمی است؛ برای جلوگیری از نمایش سرور منقضی، فهرست غیرفعال شد."
         }
 
-        val verified = index.optJSONObject("cascade_categories")?.optJSONObject("verified")
+        val secure = index.optJSONObject("cascade_categories")?.optJSONObject("secure")
             ?: throw IllegalStateException("اطلاعات دسته Verified در منبع پیدا نشد.")
-        val verifiedTotal = verified.optInt("unique", 0)
-        require(verifiedTotal > 0) { "منبع فعلی هیچ سرور Verified معتبری اعلام نکرده است." }
+        val secureTotal = secure.optInt("unique", 0)
+        require(secureTotal > 0) { "منبع فعلی هیچ سرور Secure/Verified معتبری اعلام نکرده است." }
 
-        val files = verified.optJSONObject("files")
+        val files = secure.optJSONObject("files")
             ?: throw IllegalStateException("نشانی فایل sing-box در index منبع پیدا نشد.")
         val primaryUrl = files.optString("singbox_json")
         val mirrorUrl = files.optString("singbox_json_mirror")
@@ -158,7 +158,7 @@ object FreeProxyRepository {
 
         latestSourceConfig = raw
         lastUpdatedAt = updatedAt
-        verifiedCount = verifiedTotal
+        secureCount = secureTotal
         result
     }
 
