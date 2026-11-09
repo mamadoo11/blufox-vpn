@@ -38,6 +38,7 @@ object FreeProxyRepository {
     private const val PRIMARY = "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/verified/singbox.json"
     private const val MIRROR = "https://cdn.jsdelivr.net/gh/0xRadikal/Free-v2ray-Configs@main/verified/singbox.json"
     private const val INDEX = "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/index.json"
+    private const val TOP100 = "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/top100.txt"
     private const val MAX_SERVERS = 100
     private val supportedTypes = setOf("vless", "vmess", "trojan", "shadowsocks")
     @Volatile private var latestSourceConfig: String? = null
@@ -46,7 +47,8 @@ object FreeProxyRepository {
 
     suspend fun fetchServers(limit: Int = MAX_SERVERS): List<FreeProxyServer> = withContext(Dispatchers.IO) {
         require(limit in 1..MAX_SERVERS)
-        val raw = downloadText(PRIMARY, 2_000_000).ifBlank { downloadText(MIRROR, 2_000_000) }
+        val raw = runCatching { downloadText(PRIMARY, 2_000_000) }.getOrNull().orEmpty()
+            .ifBlank { downloadText(MIRROR, 2_000_000) }
         require(raw.isNotBlank()) { "فهرست سرورهای جایگزین دریافت نشد." }
         latestSourceConfig = raw
         val root = JSONObject(raw)
@@ -63,11 +65,18 @@ object FreeProxyRepository {
             ?: throw IllegalStateException("گروه سرورهای تأییدشده در منبع پیدا نشد.")
         lastUpdatedAt = updatedAt
         val tags = autoGroup.optJSONArray("outbounds") ?: JSONArray()
+        val autoTags = (0 until tags.length()).map { tags.optString(it) }
+        val preferredTags = runCatching { downloadText(TOP100, 120_000) }
+            .getOrNull()
+            ?.lineSequence()
+            ?.mapNotNull { extractTag(it) }
+            ?.toList()
+            .orEmpty()
+        val orderedTags = if (preferredTags.isNotEmpty()) preferredTags + autoTags else autoTags
         val result = mutableListOf<FreeProxyServer>()
         val seen = HashSet<String>()
-        for (i in 0 until tags.length()) {
+        for (tag in orderedTags.distinct()) {
             if (result.size >= limit) break
-            val tag = tags.optString(i)
             val item = byTag[tag] ?: continue
             val type = item.optString("type").lowercase()
             val host = item.optString("server")
@@ -140,6 +149,25 @@ object FreeProxyRepository {
         root.put("route", route)
         root.put("outbounds", JSONArray().put(selected).put(direct))
         return root.toString()
+    }
+
+    private fun extractTag(rawLine: String): String? {
+        val line = rawLine.trim()
+        if (line.isBlank() || line.startsWith("#")) return null
+        val fragment = line.substringAfter("#", "")
+        if (fragment.isNotBlank()) {
+            return runCatching { java.net.URLDecoder.decode(fragment, "UTF-8") }.getOrNull()?.takeIf { it.isNotBlank() }
+        }
+        if (line.startsWith("vmess://", true)) {
+            val encoded = line.substringAfter("://").substringBefore("#").trim()
+            val normalized = encoded + "=".repeat((4 - encoded.length % 4) % 4)
+            val json = runCatching {
+                String(java.util.Base64.getDecoder().decode(normalized), Charsets.UTF_8)
+            }.getOrNull() ?: return null
+            val vmess = runCatching { JSONObject(json) }.getOrNull() ?: return null
+            return vmess.optString("ps").ifBlank { vmess.optString("name") }.takeIf { it.isNotBlank() }
+        }
+        return null
     }
 
     private fun downloadText(address: String, maxBytes: Int): String {
