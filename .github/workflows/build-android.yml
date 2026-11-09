@@ -41,6 +41,13 @@ jobs:
           test -d "$ANDROID_HOME/platforms/android-35" || sdkmanager "platforms;android-35"
           test -d "$ANDROID_HOME/build-tools/35.0.0" || sdkmanager "build-tools;35.0.0"
 
+      - name: Run unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+
+      - name: Android lint (non-blocking)
+        continue-on-error: true
+        run: gradle --no-daemon :app:lintDebug
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 

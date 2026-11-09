@@ -1,7 +1,10 @@
 package com.blufox.vpn
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -38,8 +41,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -60,6 +65,10 @@ class BluFoxMainActivity : ComponentActivity() {
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var pendingConfig: String? = null
     private var pendingName = ""
+    private var connectJob: Job? = null
+
+    // Android 13+: without this the foreground notification (and its disconnect action) stays hidden.
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) startPendingVpn()
@@ -82,13 +91,19 @@ class BluFoxMainActivity : ComponentActivity() {
     private fun connectLink(raw: String, displayName: String) {
         val link = raw.trim()
         when {
-            link.startsWith("ssconf://", true) -> activityScope.launch {
-                VpnRuntime.update(VpnStatus.CONNECTING, displayName, "در حال دریافت تنظیمات کلید پویای Outline…")
-                try {
-                    val profile = withContext(Dispatchers.IO) { DynamicAccessKeyResolver.resolve(link) }
-                    connectConfig(profile.configJson, displayName.ifBlank { profile.name })
-                } catch (error: Exception) {
-                    VpnRuntime.update(VpnStatus.ERROR, displayName, error.message ?: "دریافت کلید پویای Outline ناموفق بود.")
+            link.startsWith("ssconf://", true) -> {
+                connectJob?.cancel()
+                connectJob = activityScope.launch {
+                    VpnRuntime.update(VpnStatus.CONNECTING, displayName, "در حال دریافت تنظیمات کلید پویای Outline…")
+                    try {
+                        val profile = withContext(Dispatchers.IO) { DynamicAccessKeyResolver.resolve(link) }
+                        connectConfig(profile.configJson, displayName.ifBlank { profile.name })
+                    } catch (error: CancellationException) {
+                        // The user cancelled; the disconnect handler already reset the status.
+                        throw error
+                    } catch (error: Exception) {
+                        VpnRuntime.update(VpnStatus.ERROR, displayName, error.message ?: "دریافت کلید پویای Outline ناموفق بود.")
+                    }
                 }
             }
             link.startsWith("vless://", true) -> runCatching { VlessConfigBuilder.fromShareLink(link) }
@@ -116,6 +131,9 @@ class BluFoxMainActivity : ComponentActivity() {
 
     private fun startPendingVpn() {
         val config = pendingConfig ?: return
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         val intent = Intent(this, BluFoxVpnService::class.java).apply {
             action = BluFoxVpnService.ACTION_START
             putExtra(BluFoxVpnService.EXTRA_CONFIG, config)
@@ -125,6 +143,9 @@ class BluFoxMainActivity : ComponentActivity() {
     }
 
     private fun disconnect() {
+        // Also cancels a pending ssconf lookup; the service resets the status to DISCONNECTED either way.
+        connectJob?.cancel()
+        connectJob = null
         startService(Intent(this, BluFoxVpnService::class.java).setAction(BluFoxVpnService.ACTION_STOP))
     }
 
@@ -247,18 +268,19 @@ private fun BluFoxHome(
                     fontSize = 12.sp
                 )
                 Spacer(Modifier.height(14.dp))
-                if (state.status == VpnStatus.CONNECTED) {
+                // While connecting the user can cancel; previously the button was just disabled for up to ~80s.
+                if (state.status == VpnStatus.CONNECTED || state.status == VpnStatus.CONNECTING) {
                     Button(onClick = onDisconnect, modifier = Modifier.fillMaxWidth().height(54.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB33E56))) {
-                        Text("قطع اتصال", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (state.status == VpnStatus.CONNECTING) "لغو اتصال" else "قطع اتصال",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 } else {
-                    Button(onClick = onConnectSelected, modifier = Modifier.fillMaxWidth().height(54.dp), enabled = state.status != VpnStatus.CONNECTING) {
+                    Button(onClick = onConnectSelected, modifier = Modifier.fillMaxWidth().height(54.dp)) {
                         Text(
-                            when {
-                                state.status == VpnStatus.CONNECTING -> "در حال اتصال…"
-                                selectedServerName.isBlank() -> "انتخاب سرور"
-                                else -> "اتصال به سرور انتخاب‌شده"
-                            },
+                            if (selectedServerName.isBlank()) "انتخاب سرور" else "اتصال به سرور انتخاب‌شده",
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
                         )

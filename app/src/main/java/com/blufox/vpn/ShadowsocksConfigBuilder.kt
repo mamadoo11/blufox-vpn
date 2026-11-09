@@ -30,7 +30,9 @@ object ShadowsocksConfigBuilder {
             ?.takeIf { it.isNotBlank() }
 
         val querySplit = beforeFragment.split("?", limit = 2)
-        val authority = querySplit[0].substringBefore("/")
+        // SIP002 "userinfo@host:port" may be followed by "/"; a legacy base64 payload may itself contain "/".
+        val rawAuthority = querySplit[0]
+        val authority = if (rawAuthority.contains("@")) rawAuthority.substringBefore("/") else rawAuthority.trimEnd('/')
         val query = querySplit.getOrNull(1).orEmpty()
         val plugin = Uri.parse("https://placeholder/?$query").getQueryParameter("plugin")
         require(plugin.isNullOrBlank()) {
@@ -66,7 +68,8 @@ object ShadowsocksConfigBuilder {
         } catch (_: Exception) {
             throw IllegalArgumentException("آدرس سرور در لینک SS معتبر نیست.")
         }
-        val host = serverUri.host?.takeIf { it.isNotBlank() }
+        // URI.getHost() keeps the brackets of IPv6 literals ("[::1]"); sing-box expects the bare address.
+        val host = serverUri.host?.removeSurrounding("[", "]")?.takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("نام میزبان سرور در لینک SS پیدا نشد.")
         val port = serverUri.port
         require(port in 1..65535) { "پورت سرور باید بین 1 تا 65535 باشد." }
@@ -79,37 +82,9 @@ object ShadowsocksConfigBuilder {
             .put("method", method)
             .put("password", password)
 
-        val tun = JSONObject()
-            .put("type", "tun")
-            .put("tag", "tun-in")
-            .put("address", JSONArray().put("172.19.0.1/30").put("fdfe:dcba:9876::1/126"))
-            .put("auto_route", true)
-            .put("strict_route", true)
-            .put("stack", "mixed")
-            .put("sniff", true)
-
-        val dns = JSONObject()
-            .put(
-                "servers",
-                JSONArray().put(
-                    JSONObject()
-                        .put("tag", "remote-dns")
-                        .put("address", "https://1.1.1.1/dns-query")
-                        .put("detour", "proxy")
-                )
-            )
-            .put("final", "remote-dns")
-            .put("strategy", "prefer_ipv4")
-
-        val route = JSONObject()
-            .put("auto_detect_interface", true)
-            .put(
-                "rules",
-                JSONArray().put(
-                    JSONObject().put("protocol", "dns").put("action", "hijack-dns")
-                )
-            )
-            .put("final", "proxy")
+        val tun = SingBoxConfig.tunInbound()
+        val dns = SingBoxConfig.dns("proxy")
+        val route = SingBoxConfig.route("proxy")
 
         val config = JSONObject()
             .put("log", JSONObject().put("level", "info"))

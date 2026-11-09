@@ -109,22 +109,15 @@ object CloudflareWarpRepository {
             .put("mtu", 1280)
             .put("peers", JSONArray().put(peerConfig))
 
-        val dns = JSONObject()
-            .put("servers", JSONArray().put(
-                JSONObject()
-                    .put("tag", "warp-dns")
-                    .put("address", "https://1.1.1.1/dns-query")
-                    .put("detour", "warp")
-            ))
-            .put("final", "warp-dns")
-            .put("strategy", "prefer_ipv4")
-
+        // The previous config had no TUN inbound, so the engine never opened a VPN interface and no traffic
+        // was captured. The WARP endpoint hostname is also resolved through the bootstrap (direct) resolver.
         return JSONObject()
             .put("log", JSONObject().put("level", "info"))
-            .put("dns", dns)
+            .put("dns", SingBoxConfig.dns("warp"))
+            .put("inbounds", JSONArray().put(SingBoxConfig.tunInbound()))
             .put("endpoints", JSONArray().put(wireguardEndpoint))
             .put("outbounds", JSONArray().put(JSONObject().put("type", "direct").put("tag", "direct")))
-            .put("route", JSONObject().put("auto_detect_interface", true).put("final", "warp"))
+            .put("route", SingBoxConfig.route("warp"))
             .toString()
     }
 

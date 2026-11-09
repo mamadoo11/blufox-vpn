@@ -49,14 +49,9 @@ object VlessConfigBuilder {
    }
    else -> throw IllegalArgumentException("انتقال $transportType فعلاً پشتیبانی نشده است.")
   }
-  val tun=JSONObject().put("type","tun").put("tag","tun-in")
-   .put("address",JSONArray().put("172.19.0.1/30").put("fdfe:dcba:9876::1/126"))
-   .put("auto_route",true).put("strict_route",true).put("stack","mixed").put("sniff",true)
-  val dns=JSONObject().put("servers",JSONArray().put(JSONObject().put("tag","remote-dns").put("address","https://1.1.1.1/dns-query").put("detour","proxy")))
-   .put("final","remote-dns").put("strategy","prefer_ipv4")
-  val route=JSONObject().put("auto_detect_interface",true)
-   .put("rules",JSONArray().put(JSONObject().put("protocol","dns").put("action","hijack-dns")))
-   .put("final","proxy")
+  val tun=SingBoxConfig.tunInbound()
+  val dns=SingBoxConfig.dns("proxy")
+  val route=SingBoxConfig.route("proxy")
   val config=JSONObject().put("log",JSONObject().put("level","info"))
    .put("dns",dns).put("inbounds",JSONArray().put(tun))
    .put("outbounds",JSONArray().put(outbound).put(JSONObject().put("type","direct").put("tag","direct")))

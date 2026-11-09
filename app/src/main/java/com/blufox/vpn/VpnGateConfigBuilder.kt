@@ -86,14 +86,7 @@ object VpnGateConfigBuilder {
         directives.firstOrNull { it.startsWith("auth ", true) }
             ?.substringAfter(' ')?.trim()?.uppercase()?.let { endpoint.put("auth", it) }
 
-        val tun = JSONObject()
-            .put("type", "tun")
-            .put("tag", "tun-in")
-            .put("address", JSONArray().put("172.19.0.1/30").put("fdfe:dcba:9876::1/126"))
-            .put("auto_route", true)
-            .put("strict_route", true)
-            .put("stack", "mixed")
-            .put("sniff", true)
+        val tun = SingBoxConfig.tunInbound()
 
         val dns = JSONObject()
             .put(
@@ -116,12 +109,8 @@ object VpnGateConfigBuilder {
             .put("inbounds", JSONArray().put(tun))
             .put("endpoints", JSONArray().put(endpoint))
             .put("outbounds", JSONArray().put(JSONObject().put("type", "direct").put("tag", "direct")))
-            .put(
-                "route",
-                JSONObject()
-                    .put("auto_detect_interface", true)
-                    .put("final", "proxy")
-            )
+            // This config defines its own OpenVPN DNS server, so there is no bootstrap resolver to reference.
+            .put("route", SingBoxConfig.route("proxy", domainResolver = null))
 
         return config.toString()
     }
