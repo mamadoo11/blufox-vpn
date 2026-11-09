@@ -15,7 +15,9 @@ data class VpnGateServer(
     val pingMs: Long,
     val speedBps: Long,
     val sessions: Int,
-    val configBase64: String
+    val configBase64: String,
+    val sourceLabel: String,
+    val fetchedAt: Long
 ) {
     val displayName: String get() = "$country • $ip"
     val speedLabel: String get() = when {
@@ -27,57 +29,106 @@ data class VpnGateServer(
 }
 
 object VpnGateRepository {
-    private const val API = "https://www.vpngate.net/api/iphone/"
+    private data class Source(val label: String, val url: String)
+
+    // The official API is preferred. Public mirrors are fallbacks only, not independent server operators.
+    private val sources = listOf(
+        Source("VPN Gate رسمی", "https://www.vpngate.net/api/iphone/"),
+        Source("آینه عمومی VPN Gate", "https://cdn.jsdelivr.net/gh/GeorgeXie2333/vpngate-list-mirror@latest/data/vpngate.csv"),
+        Source("GitHub Raw mirror", "https://raw.githubusercontent.com/GeorgeXie2333/vpngate-list-mirror/main/data/vpngate.csv")
+    )
 
     suspend fun fetchServers(limit: Int = 40): List<VpnGateServer> = withContext(Dispatchers.IO) {
-        val connection = (URL(API).openConnection() as HttpURLConnection).apply {
+        require(limit in 1..100) { "تعداد سرورها نامعتبر است." }
+        val failures = mutableListOf<String>()
+
+        for (source in sources) {
+            try {
+                val found = downloadAndParse(source, limit)
+                if (found.isNotEmpty()) return@withContext found
+                failures += "${source.label}: فهرست خالی یا فاقد کانفیگ معتبر بود"
+            } catch (error: Exception) {
+                failures += "${source.label}: ${error.message ?: "خطای دریافت"}"
+            }
+        }
+
+        throw IllegalStateException(
+            "از هیچ‌کدام از منابع VPN Gate فهرست قابل استفاده دریافت نشد. اتصال اینترنت یا دسترسی به منابع را بررسی کن. " +
+                failures.joinToString(" | ").take(700)
+        )
+    }
+
+    private fun downloadAndParse(source: Source, limit: Int): List<VpnGateServer> {
+        val connection = (URL(source.url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 18_000
-            readTimeout = 25_000
+            connectTimeout = 10_000
+            readTimeout = 15_000
             useCaches = false
-            setRequestProperty("User-Agent", "BluFoxVPN/0.3 Android")
-            setRequestProperty("Accept", "text/csv,*/*")
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "BluFoxVPN/0.4 Android")
+            setRequestProperty("Accept", "text/csv,text/plain,*/*")
         }
         try {
-            val rows = connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                val result = mutableListOf<VpnGateServer>()
+            val code = connection.responseCode
+            require(code in 200..299) { "HTTP $code" }
+            val fetchedAt = System.currentTimeMillis()
+            val rows = mutableListOf<VpnGateServer>()
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                 var line = reader.readLine()
-                while (line != null && result.size < 250) {
+                var scanned = 0
+                while (line != null && rows.size < 250 && scanned < 1500) {
+                    scanned++
                     if (line.isNotBlank() && !line.startsWith("*") && !line.startsWith("#")) {
                         val cells = parseCsvLine(line)
-                        if (cells.size >= 15) {
-                            val encoded = cells[14].trim().trim('"')
+                        if (cells.size >= 15 && !cells[0].equals("HostName", true)) {
+                            val host = cells[0].trim()
                             val ip = cells[1].trim()
                             val country = cells[5].trim()
-                            val code = cells[6].trim()
-                            val ping = cells[3].toLongOrNull() ?: Long.MAX_VALUE
-                            val speed = cells[4].toLongOrNull() ?: 0L
-                            val sessions = cells[7].toIntOrNull() ?: 0
-                            if (ip.isNotBlank() && country.isNotBlank() && encoded.isNotBlank()) {
-                                result.add(
-                                    VpnGateServer(
-                                        hostName = cells[0].trim(),
-                                        ip = ip,
-                                        country = country,
-                                        countryCode = code,
-                                        pingMs = ping,
-                                        speedBps = speed,
-                                        sessions = sessions,
-                                        configBase64 = encoded
-                                    )
+                            val code2 = cells[6].trim()
+                            val encoded = cells[14].trim()
+                            if (host.isNotBlank() && isIpAddress(ip) && country.isNotBlank() &&
+                                hasUsableConfig(encoded)
+                            ) {
+                                rows += VpnGateServer(
+                                    hostName = host,
+                                    ip = ip,
+                                    country = country,
+                                    countryCode = code2,
+                                    pingMs = cells[3].toLongOrNull() ?: Long.MAX_VALUE,
+                                    speedBps = cells[4].toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+                                    sessions = cells[7].toIntOrNull()?.coerceAtLeast(0) ?: 0,
+                                    configBase64 = encoded,
+                                    sourceLabel = source.label,
+                                    fetchedAt = fetchedAt
                                 )
                             }
                         }
                     }
                     line = reader.readLine()
                 }
-                result
             }
-            rows.sortedWith(compareBy<VpnGateServer> { it.pingMs }.thenByDescending { it.speedBps })
+            return rows.distinctBy { it.ip + ":" + it.hostName }
+                .sortedWith(compareBy<VpnGateServer> { it.pingMs }.thenByDescending { it.speedBps })
                 .take(limit)
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun hasUsableConfig(encoded: String): Boolean {
+        if (encoded.isBlank() || encoded.length < 100) return false
+        return runCatching {
+            val profile = decodeConfig(encoded)
+            val hasRemote = profile.lineSequence().any { it.trim().startsWith("remote ", true) }
+            val hasCa = profile.contains("<ca>", true) && profile.contains("</ca>", true)
+            hasRemote && hasCa
+        }.getOrDefault(false)
+    }
+
+    private fun isIpAddress(value: String): Boolean {
+        if (value.isBlank() || value.length > 45) return false
+        return value.matches(Regex("[0-9]{1,3}(\\.[0-9]{1,3}){3}")) ||
+            value.contains(":") && value.matches(Regex("[0-9a-fA-F:]+"))
     }
 
     private fun parseCsvLine(line: String): List<String> {
