@@ -225,6 +225,11 @@ private fun BluFoxApp(
                             savedProfiles.clear()
                             savedProfiles.addAll(ProfileStore.load(context))
                         },
+                        onSaveProfile = { config, name ->
+                            ProfileStore.save(context, name, config)
+                            savedProfiles.clear()
+                            savedProfiles.addAll(ProfileStore.load(context))
+                        },
                         savedProfiles = savedProfiles,
                         onSavedConnect = { onConnectConfig(it.configJson, it.name) },
                         onDeleteSaved = { profile ->
@@ -496,6 +501,7 @@ private fun ServerSourceCard(onServers: () -> Unit) {
 @Composable
 private fun ServersScreen(
     onConnect: (String, String) -> Unit,
+    onSaveProfile: (String, String) -> Unit,
     savedProfiles: List<SavedVpnProfile>,
     onSavedConnect: (SavedVpnProfile) -> Unit,
     onDeleteSaved: (SavedVpnProfile) -> Unit
@@ -506,6 +512,7 @@ private fun ServersScreen(
     var loading by remember { mutableStateOf(false) }
     var scanning by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    var successMessage by remember { mutableStateOf("") }
     var sourceUpdatedAt by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
     var selectedServerTag by remember { mutableStateOf("") }
@@ -513,6 +520,7 @@ private fun ServersScreen(
     suspend fun refreshServers() {
         loading = true
         errorMessage = ""
+        successMessage = ""
         try {
             val found = FreeProxyRepository.fetchServers(100)
             servers.clear()
@@ -650,6 +658,9 @@ private fun ServersScreen(
         if (errorMessage.isNotBlank()) {
             Text(errorMessage, color = Red, fontSize = 11.sp)
         }
+        if (successMessage.isNotBlank()) {
+            Text(successMessage, color = Green, fontSize = 11.sp)
+        }
         Text(
             "اعتبارسنجی Verified مربوط به آزمون سه‌مرحله‌ای منبع است. پینگ این صفحه فقط اتصال TCP به پورت سرور را می‌سنجد؛ اتصال VPN فقط پس از عبور واقعی ترافیک تأیید می‌شود.",
             color = Muted,
@@ -743,13 +754,26 @@ private fun ServersScreen(
                             color = Muted,
                             fontSize = 9.sp
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             TextButton(
                                 onClick = { selectedServerTag = server.tag },
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(0.9f)
                             ) {
-                                Text(if (selected) "انتخاب شده" else "انتخاب")
+                                Text(if (selected) "انتخاب شد" else "انتخاب", fontSize = 11.sp)
                             }
+                            TextButton(
+                                onClick = {
+                                    try {
+                                        onSaveProfile(FreeProxyRepository.buildSingleServerConfig(server), server.tag)
+                                        errorMessage = ""
+                                        successMessage = "سرور به پروفایل‌های ذخیره‌شده اضافه شد."
+                                    } catch (error: Exception) {
+                                        successMessage = ""
+                                        errorMessage = error.message ?: "ذخیره سرور ناموفق بود."
+                                    }
+                                },
+                                modifier = Modifier.weight(0.9f)
+                            ) { Text("افزودن", fontSize = 11.sp) }
                             Button(
                                 onClick = {
                                     selectedServerTag = server.tag
@@ -759,7 +783,7 @@ private fun ServersScreen(
                                         errorMessage = error.message ?: "ساخت تنظیمات سرور ناموفق بود."
                                     }
                                 },
-                                modifier = Modifier.weight(1.4f).height(40.dp),
+                                modifier = Modifier.weight(1.2f).height(40.dp),
                                 shape = RoundedCornerShape(12.dp)
                             ) { Text("اتصال", fontSize = 12.sp) }
                         }
