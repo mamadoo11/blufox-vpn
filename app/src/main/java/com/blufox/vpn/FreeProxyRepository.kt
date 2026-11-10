@@ -26,7 +26,6 @@ data class FreeProxyServer(
     val flagEmoji: String,
     val outboundJson: String,
     val upstreamUpdatedAt: String,
-    val validationRounds: Int = 3,
     val sourceLabel: String = "0xRadikal • Secure/Verified"
 ) {
     val displayName: String get() = tag

@@ -59,7 +59,7 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
     val config=intent.getStringExtra(EXTRA_CONFIG).orEmpty()
     val name=intent.getStringExtra(EXTRA_NAME).orEmpty()
     if(config.isBlank()){VpnRuntime.update(VpnStatus.ERROR,message="تنظیمات اتصال خالی است.");stopSelf(startId);return START_NOT_STICKY}
-    startForegroundCompat(buildNotification(if(intent.action==ACTION_TEST_SERVERS) "در حال آزمایش واقعی سرورها…" else "در حال اتصال…"))
+    startForegroundCompat(buildNotification(if(intent.action==ACTION_TEST_SERVERS) "در حال آزمون HTTPS خروجی سرورها…" else "در حال اتصال…"))
     val probeTags=intent.getStringArrayListExtra(EXTRA_PROBE_TAGS).orEmpty()
     val probeSecret=intent.getStringExtra(EXTRA_PROBE_SECRET).orEmpty()
     if(intent.action==ACTION_TEST_SERVERS && (probeTags.isEmpty() || probeSecret.isBlank())){
@@ -84,7 +84,7 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
   VpnRuntime.update(
    VpnStatus.CONNECTING,
    name,
-   if(probeTags.isNotEmpty()) "در حال راه‌اندازی یک تونل موقت برای آزمایش " + probeTags.size + " سرور…" else "در حال راه‌اندازی موتور و تونل امن…",
+   if(probeTags.isNotEmpty()) "در حال آماده‌سازی sing-box برای آزمون HTTPS خروجی " + probeTags.size + " سرور…" else "در حال راه‌اندازی موتور و تونل امن…",
    probeResults=emptyList(),
    probeCompletedAt=0L
   )
@@ -103,11 +103,11 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
      VpnRuntime.update(
       VpnStatus.DISCONNECTED,
       name,
-      "آزمایش تونل پایان یافت: " + passed + " از " + results.size + " سرور عبور HTTPS موفق داشتند.",
+      "آزمون HTTPS خروجی پایان یافت: " + passed + " از " + results.size + " outbound موفق بود؛ عبور ترافیک برنامه از TUN برای هر سرور جداگانه تأیید نشده است.",
       probeResults=results,
       probeCompletedAt=System.currentTimeMillis()
      )
-     updateNotification("آزمایش پایان یافت • " + passed + "/" + results.size)
+     updateNotification("آزمون HTTPS خروجی • " + passed + "/" + results.size)
      stopForeground(STOP_FOREGROUND_REMOVE)
      stopSelf(startId)
      return@launch
@@ -161,7 +161,7 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
    } catch(error:Throwable) { lastError=error }
    delay(500)
   }
-  throw IllegalStateException("Clash API داخلی sing-box آماده نشد؛ آزمون واقعی سرورها اجرا نشد.",lastError)
+  throw IllegalStateException("Clash API داخلی sing-box آماده نشد؛ آزمون HTTPS خروجی اجرا نشد.",lastError)
  }
 
  private fun probeOneOutbound(tag:String,secret:String):TunnelProbeResult {
@@ -189,7 +189,7 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
     TunnelProbeResult(tag,delayMs,null)
    } finally {connection.disconnect()}
   } catch(error:Throwable) {
-   TunnelProbeResult(tag,null,error.message?: "آزمون HTTPS از outbound ناموفق بود.")
+   TunnelProbeResult(tag,null,error.message?: "آزمون HTTPS خروجی outbound ناموفق بود.")
   }
  }
 

@@ -6,8 +6,9 @@
 - sing-box/libbox 1.14.4 is the only engine currently wired to that service.
 - VLESS share links and VPN Gate OpenVPN profiles are converted to sing-box JSON and passed to the same libbox runtime.
 - VPN Gate results currently live only in the Servers screen's in-memory list.
-- The home screen's ping and traffic figures are placeholders; they must not be presented as live measurements.
-- The current connection flow verifies HTTPS traffic through the tunnel before reporting CONNECTED.
+- The home screen shows the measured tunnel-verification duration and exit IP; upload/download counters remain unavailable and are explicitly shown as unavailable.
+- The normal single-server connection flow verifies HTTPS traffic through Android TUN before reporting CONNECTED.
+- The bulk candidate check currently creates one TUN session but uses the local Clash API delay endpoint to issue an HTTPS request from each sing-box outbound. This confirms outbound HTTPS reachability, not an app-originated request traversing Android TUN for every candidate. UI labels must keep this distinction explicit; do not call these results TUN-verified.
 
 ## Target architecture
 

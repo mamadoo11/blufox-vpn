@@ -620,7 +620,7 @@ private fun ServersScreen(
     ) {
         Text("سرورها", fontSize = 25.sp, fontWeight = FontWeight.Black)
         Text(
-            "منبع: 0xRadikal • فقط دسته Secure سازگار با sing-box؛ هر سرور پس از سه آزمون HTTP منبع فهرست می‌شود.",
+            "منبع: 0xRadikal • فقط دسته Secure/Verified منبع؛ این برچسب جایگزین آزمون اتصال از داخل TUN نیست.",
             color = Muted,
             fontSize = 11.sp
         )
@@ -705,10 +705,10 @@ private fun ServersScreen(
         ) {
             Text(
                 when {
-                    vpnState.status == VpnStatus.CONNECTING && vpnState.serverName == "آزمایش واقعی سرورها" -> "در حال آزمایش تونل…"
+                    vpnState.status == VpnStatus.CONNECTING && vpnState.serverName == "آزمایش واقعی سرورها" -> "در حال آزمون HTTPS خروجی…"
                     vpnState.status == VpnStatus.CONNECTED -> "ابتدا اتصال VPN را قطع کن"
                     vpnState.status == VpnStatus.CONNECTING -> "در حال اتصال…"
-                    else -> "آزمایش واقعی همه سرورها با sing-box"
+                    else -> "آزمون HTTPS خروجی همه سرورها با sing-box"
                 },
                 fontSize = 12.sp
             )
@@ -717,7 +717,7 @@ private fun ServersScreen(
         if (vpnState.probeCompletedAt > 0L && vpnState.probeResults.isNotEmpty()) {
             val passed = vpnState.probeResults.count { it.successful }
             Text(
-                "نتیجه آزمون واقعی تونل: " + passed + " از " + vpnState.probeResults.size + " موفق • مرتب‌سازی بر اساس تأخیر HTTPS",
+                "نتیجه آزمون HTTPS خروجی sing-box: " + passed + " از " + vpnState.probeResults.size + " outbound موفق • مرتب‌سازی بر اساس تأخیر HTTPS",
                 color = if (passed > 0) Green else Red,
                 fontSize = 11.sp
             )
@@ -744,7 +744,7 @@ private fun ServersScreen(
             Text(successMessage, color = Green, fontSize = 11.sp)
         }
         Text(
-            "Secure/Verified فقط نتیجه بررسی منبع است. آزمون واقعی sing-box با HTTPS جداگانه انجام می‌شود؛ پینگ TCP به‌تنهایی اتصال VPN را ثابت نمی‌کند.",
+            "Secure/Verified فقط برچسب منبع است. آزمون فعلی، HTTPS را از outbound هر سرور در sing-box می‌سنجد؛ عبور ترافیک برنامه از Android TUN برای تک‌تک سرورها هنوز تأیید نشده است. پینگ TCP به‌تنهایی اتصال VPN را ثابت نمی‌کند.",
             color = Muted,
             fontSize = 10.sp
         )
@@ -804,7 +804,7 @@ private fun ServersScreen(
                             )
                             Spacer(Modifier.weight(1f))
                             Text(
-                                "Secure • Verified ${server.validationRounds}/3 HTTP",
+                                "منبع: Secure/Verified",
                                 color = Green,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -823,7 +823,7 @@ private fun ServersScreen(
                                 when {
                                     tunnelResult?.successful == true -> {
                                         Text((tunnelResult.latencyMs ?: 0L).toString() + " ms", color = Green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text("عبور HTTPS واقعی", color = Green, fontSize = 9.sp)
+                                        Text("HTTPS خروجی sing-box", color = Green, fontSize = 9.sp)
                                     }
                                     tunnelResult != null -> {
                                         Text("تونل ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)
