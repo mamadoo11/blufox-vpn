@@ -276,7 +276,7 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
      name=ni.name;index=ni.index
      runCatching{mtu=ni.mtu}
      type=when{ni.name.startsWith("wlan")->Libbox.InterfaceTypeWIFI;ni.name.startsWith("rmnet")->Libbox.InterfaceTypeCellular;else->Libbox.InterfaceTypeOther}
-     addresses=StringArray(ni.interfaceAddresses.mapNotNull{a->val host=a.address?.hostAddress?:return@mapNotNull null;"$host/"+a.networkPrefixLength}.iterator())
+     addresses=StringArray(ni.interfaceAddresses.mapNotNull{a->val host=a.address?.hostAddress?:return@mapNotNull null;"$host/"+a.networkPrefixLength})
     }
     result.add(item)
    }
@@ -303,10 +303,11 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
  override fun usePlatformBridge():Boolean=false
  override fun createBridge(options:BridgeOptions?):BridgeSession=error("Bridge is not enabled.")
 
- private class StringArray(private val iterator:Iterator<String>):StringIterator {
-  override fun len():Int=0
-  override fun hasNext():Boolean=iterator.hasNext()
-  override fun next():String=iterator.next()
+ private class StringArray(private val values:List<String>):StringIterator {
+  private var index=0
+  override fun len():Int=values.size
+  override fun hasNext():Boolean=index<values.size
+  override fun next():String=values[index++]
  }
  private class InterfaceArray(private val iterator:Iterator<LibboxNetworkInterface>):NetworkInterfaceIterator {
   override fun hasNext():Boolean=iterator.hasNext()
