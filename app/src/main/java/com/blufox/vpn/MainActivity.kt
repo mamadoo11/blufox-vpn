@@ -115,7 +115,7 @@ class MainActivity : ComponentActivity() {
                 vpnState = vpnState,
                 onConnect = ::prepareConnection,
                 onDisconnect = ::disconnect,
-                onConnectConfig = ::prepareConfig,
+                onConnectConfig = { config, name -> prepareConfig(config, name) },
                 onConnectFreeServer = ::prepareFreeServer,
                 onConnectSavedProfile = ::prepareSavedProfile,
                 onTestServers = ::prepareTunnelProbe
