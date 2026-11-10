@@ -547,6 +547,7 @@ private fun ServersScreen(
     onSavedConnect: (SavedVpnProfile) -> Unit,
     onDeleteSaved: (SavedVpnProfile) -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val servers = remember { mutableStateListOf<FreeProxyServer>() }
     val pingResults = remember { mutableStateListOf<ServerPingResult>() }
@@ -556,7 +557,12 @@ private fun ServersScreen(
     var successMessage by remember { mutableStateOf("") }
     var sourceUpdatedAt by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
-    var selectedServerTag by remember { mutableStateOf("") }
+    var selectedServerTag by remember { mutableStateOf(ProfileStore.loadSelectedServerTag(context)) }
+
+    fun selectServer(tag: String) {
+        selectedServerTag = tag
+        ProfileStore.saveSelectedServerTag(context, tag)
+    }
 
     suspend fun refreshServers() {
         loading = true
@@ -572,13 +578,13 @@ private fun ServersScreen(
                 VpnRuntime.update(VpnStatus.DISCONNECTED, message = "فهرست سرورها به‌روز شد.")
             }
             sourceUpdatedAt = FreeProxyRepository.lastUpdatedAt
-            if (found.none { it.tag == selectedServerTag }) selectedServerTag = ""
+            if (found.none { it.tag == selectedServerTag }) selectServer("")
         } catch (error: Exception) {
             // Never leave a previously fetched, now potentially stale list connectable after refresh fails.
             servers.clear()
             pingResults.clear()
             sourceUpdatedAt = ""
-            selectedServerTag = ""
+            selectServer("")
             errorMessage = error.message ?: "دریافت فهرست سرورها ناموفق بود."
         } finally {
             loading = false
@@ -842,7 +848,7 @@ private fun ServersScreen(
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             TextButton(
-                                onClick = { selectedServerTag = server.tag },
+                                onClick = { selectServer(server.tag) },
                                 modifier = Modifier.weight(0.9f)
                             ) {
                                 Text(if (selected) "انتخاب شد" else "انتخاب", fontSize = 11.sp)
@@ -862,7 +868,7 @@ private fun ServersScreen(
                             ) { Text("افزودن", fontSize = 11.sp) }
                             Button(
                                 onClick = {
-                                    selectedServerTag = server.tag
+                                    selectServer(server.tag)
                                     try {
                                         onConnect(FreeProxyRepository.buildSingleServerConfig(server), server.tag)
                                     } catch (error: Exception) {

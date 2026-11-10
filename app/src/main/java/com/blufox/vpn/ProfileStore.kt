@@ -21,6 +21,18 @@ data class SavedVpnProfile(
 object ProfileStore {
     private const val PREFS = "blufox_saved_profiles"
     private const val KEY_PROFILES = "profiles"
+    private const val KEY_SELECTED_SERVER = "selected_server_tag"
+
+    fun loadSelectedServerTag(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_SELECTED_SERVER, "").orEmpty()
+
+    fun saveSelectedServerTag(context: Context, tag: String) {
+        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        if (tag.isBlank()) editor.remove(KEY_SELECTED_SERVER)
+        else editor.putString(KEY_SELECTED_SERVER, tag)
+        editor.apply()
+    }
 
     fun load(context: Context): List<SavedVpnProfile> {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
