@@ -10,6 +10,7 @@ data class VpnUiState(
  val serverName:String="",
  val message:String="",
  val exitIp:String="",
+ val tunnelLatencyMs:Long?=null,
  val probeResults:List<TunnelProbeResult> = emptyList(),
  val probeCompletedAt:Long = 0L
 )
@@ -21,7 +22,8 @@ object VpnRuntime {
   serverName:String="",
   message:String="",
   exitIp:String="",
+  tunnelLatencyMs:Long?=null,
   probeResults:List<TunnelProbeResult> = emptyList(),
   probeCompletedAt:Long = 0L
- ){mutableState.value=VpnUiState(status,serverName,message,exitIp,probeResults,probeCompletedAt)}
+ ){mutableState.value=VpnUiState(status,serverName,message,exitIp,tunnelLatencyMs,probeResults,probeCompletedAt)}
 }
