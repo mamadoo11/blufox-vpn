@@ -4,14 +4,35 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.time.Duration
+import java.time.Instant
 
 data class SavedVpnProfile(
     val id: String,
     val name: String,
     val configJson: String,
-    val savedAt: Long
+    val savedAt: Long,
+    val sourceLabel: String = "",
+    val sourceUpdatedAt: String = ""
 ) {
     val engineLabel: String get() = "موتور: sing-box"
+
+    // Old free-source profiles are detected by their upstream tag and fail closed
+    // because their original freshness timestamp was not persisted by older builds.
+    val isSourceManaged: Boolean
+        get() = sourceLabel.isNotBlank() ||
+            name.contains("@Raydikalx", ignoreCase = true) ||
+            configJson.contains("@Raydikalx", ignoreCase = true)
+
+    // Source verification is time-bounded; a recent upstream test is not a guarantee
+    // that the server is still alive on this device's network.
+    val isSourceFresh: Boolean
+        get() {
+            if (!isSourceManaged) return true
+            val updated = runCatching { Instant.parse(sourceUpdatedAt) }.getOrNull() ?: return false
+            val ageSeconds = Duration.between(updated, Instant.now()).seconds
+            return ageSeconds in -300..3600
+        }
 }
 
 /**
@@ -46,19 +67,49 @@ object ProfileStore {
                     val name = item.optString("name")
                     val config = item.optString("config")
                     if (id.isNotBlank() && name.isNotBlank() && config.isNotBlank()) {
-                        add(SavedVpnProfile(id, name, config, item.optLong("savedAt")))
+                        add(
+                            SavedVpnProfile(
+                                id = id,
+                                name = name,
+                                configJson = config,
+                                savedAt = item.optLong("savedAt"),
+                                sourceLabel = item.optString("sourceLabel"),
+                                sourceUpdatedAt = item.optString("sourceUpdatedAt")
+                            )
+                        )
                     }
                 }
             }.sortedByDescending { it.savedAt }
         }.getOrDefault(emptyList())
     }
 
-    fun save(context: Context, name: String, configJson: String) {
+    fun save(
+        context: Context,
+        name: String,
+        configJson: String,
+        sourceLabel: String? = null,
+        sourceUpdatedAt: String? = null
+    ) {
         require(configJson.isNotBlank()) { "تنظیمات سرور خالی است." }
         val cleanName = name.trim().ifBlank { "سرور بدون نام" }.take(80)
         val id = sha256("$cleanName\n$configJson")
+        val previous = load(context).firstOrNull { it.id == id }
+        val cleanSourceLabel = sourceLabel?.trim()?.takeIf { it.isNotBlank() }
+            ?: previous?.sourceLabel.orEmpty()
+        val cleanSourceUpdatedAt = sourceUpdatedAt?.trim()?.takeIf { it.isNotBlank() }
+            ?: previous?.sourceUpdatedAt.orEmpty()
         val current = load(context).filterNot { it.id == id }.toMutableList()
-        current.add(0, SavedVpnProfile(id, cleanName, configJson, System.currentTimeMillis()))
+        current.add(
+            0,
+            SavedVpnProfile(
+                id = id,
+                name = cleanName,
+                configJson = configJson,
+                savedAt = System.currentTimeMillis(),
+                sourceLabel = cleanSourceLabel,
+                sourceUpdatedAt = cleanSourceUpdatedAt
+            )
+        )
         persist(context, current.take(100))
     }
 
@@ -75,6 +126,8 @@ object ProfileStore {
                     .put("name", profile.name)
                     .put("config", profile.configJson)
                     .put("savedAt", profile.savedAt)
+                    .put("sourceLabel", profile.sourceLabel)
+                    .put("sourceUpdatedAt", profile.sourceUpdatedAt)
             )
         }
         check(

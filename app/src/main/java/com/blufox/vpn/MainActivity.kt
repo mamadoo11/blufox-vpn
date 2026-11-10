@@ -116,6 +116,8 @@ class MainActivity : ComponentActivity() {
                 onConnect = ::prepareConnection,
                 onDisconnect = ::disconnect,
                 onConnectConfig = ::prepareConfig,
+                onConnectFreeServer = ::prepareFreeServer,
+                onConnectSavedProfile = ::prepareSavedProfile,
                 onTestServers = ::prepareTunnelProbe
             )
         }
@@ -130,10 +132,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun prepareConfig(configJson: String, name: String) {
+    private fun prepareConfig(
+        configJson: String,
+        name: String,
+        sourceLabel: String? = null,
+        sourceUpdatedAt: String? = null
+    ) {
         pendingProbeTags = null
         pendingProbeSecret = ""
-        runCatching { ProfileStore.save(this, name.ifBlank { "سرور بدون نام" }, configJson) }
+        runCatching {
+            ProfileStore.save(
+                this,
+                name.ifBlank { "سرور بدون نام" },
+                configJson,
+                sourceLabel,
+                sourceUpdatedAt
+            )
+        }
         pendingConfigJson = configJson
         pendingServerName = name
         val permissionIntent = VpnService.prepare(this)
@@ -142,6 +157,36 @@ class MainActivity : ComponentActivity() {
         } else {
             startPendingVpn()
         }
+    }
+
+    private fun prepareFreeServer(server: FreeProxyServer) {
+        try {
+            val config = FreeProxyRepository.buildSingleServerConfig(server)
+            prepareConfig(config, server.tag, server.sourceLabel, server.upstreamUpdatedAt)
+        } catch (error: Exception) {
+            VpnRuntime.update(
+                VpnStatus.ERROR,
+                server.tag,
+                error.message ?: "ساخت تنظیمات سرور ناموفق بود."
+            )
+        }
+    }
+
+    private fun prepareSavedProfile(profile: SavedVpnProfile) {
+        if (!profile.isSourceFresh) {
+            VpnRuntime.update(
+                VpnStatus.ERROR,
+                profile.name,
+                "اعتبار منبع این سرور منقضی یا نامشخص است؛ فهرست تازه را دریافت و سرور را دوباره اضافه کن."
+            )
+            return
+        }
+        prepareConfig(
+            profile.configJson,
+            profile.name,
+            profile.sourceLabel.takeIf { it.isNotBlank() },
+            profile.sourceUpdatedAt.takeIf { it.isNotBlank() }
+        )
     }
 
     private fun prepareTunnelProbe(servers: List<FreeProxyServer>) {
@@ -196,6 +241,8 @@ private fun BluFoxApp(
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
     onConnectConfig: (String, String) -> Unit,
+    onConnectFreeServer: (FreeProxyServer) -> Unit,
+    onConnectSavedProfile: (SavedVpnProfile) -> Unit,
     onTestServers: (List<FreeProxyServer>) -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -259,18 +306,29 @@ private fun BluFoxApp(
                     1 -> ServersScreen(
                         vpnState = vpnState,
                         onTestAll = onTestServers,
-                        onConnect = { config, name ->
-                            onConnectConfig(config, name)
+                        onConnect = { server ->
+                            onConnectFreeServer(server)
                             savedProfiles.clear()
                             savedProfiles.addAll(ProfileStore.load(context))
                         },
-                        onSaveProfile = { config, name ->
-                            ProfileStore.save(context, name, config)
+                        onSaveProfile = { server ->
+                            val config = FreeProxyRepository.buildSingleServerConfig(server)
+                            ProfileStore.save(
+                                context,
+                                server.tag,
+                                config,
+                                server.sourceLabel,
+                                server.upstreamUpdatedAt
+                            )
                             savedProfiles.clear()
                             savedProfiles.addAll(ProfileStore.load(context))
                         },
                         savedProfiles = savedProfiles,
-                        onSavedConnect = { onConnectConfig(it.configJson, it.name) },
+                        onSavedConnect = { profile ->
+                            onConnectSavedProfile(profile)
+                            savedProfiles.clear()
+                            savedProfiles.addAll(ProfileStore.load(context))
+                        },
                         onDeleteSaved = { profile ->
                             ProfileStore.delete(context, profile.id)
                             savedProfiles.removeAll { it.id == profile.id }
@@ -541,8 +599,8 @@ private fun ServerSourceCard(onServers: () -> Unit) {
 private fun ServersScreen(
     vpnState: VpnUiState,
     onTestAll: (List<FreeProxyServer>) -> Unit,
-    onConnect: (String, String) -> Unit,
-    onSaveProfile: (String, String) -> Unit,
+    onConnect: (FreeProxyServer) -> Unit,
+    onSaveProfile: (FreeProxyServer) -> Unit,
     savedProfiles: List<SavedVpnProfile>,
     onSavedConnect: (SavedVpnProfile) -> Unit,
     onDeleteSaved: (SavedVpnProfile) -> Unit
@@ -653,8 +711,24 @@ private fun ServersScreen(
                         Column(Modifier.weight(1f)) {
                             Text(profile.name, fontWeight = FontWeight.Bold)
                             Text(profile.engineLabel, color = Muted, fontSize = 10.sp)
+                            if (profile.isSourceManaged) {
+                                Text(
+                                    "منبع: ${profile.sourceLabel.ifBlank { "0xRadikal • Secure/Verified" }} • به‌روزرسانی: ${profile.sourceUpdatedAt.ifBlank { "نامشخص" }} UTC",
+                                    color = Muted,
+                                    fontSize = 9.sp
+                                )
+                                Text(
+                                    if (profile.isSourceFresh) "اعتبار منبع: تازه (حداکثر ۶۰ دقیقه)"
+                                    else "اعتبار منبع: منقضی یا نامشخص؛ دریافت مجدد لازم است",
+                                    color = if (profile.isSourceFresh) Green else Red,
+                                    fontSize = 9.sp
+                                )
+                            }
                         }
-                        TextButton(onClick = { onSavedConnect(profile) }) { Text("اتصال") }
+                        TextButton(
+                            enabled = profile.isSourceFresh,
+                            onClick = { onSavedConnect(profile) }
+                        ) { Text("اتصال") }
                         TextButton(onClick = { onDeleteSaved(profile) }) { Text("حذف", color = Red) }
                     }
                 }
@@ -856,7 +930,7 @@ private fun ServersScreen(
                             TextButton(
                                 onClick = {
                                     try {
-                                        onSaveProfile(FreeProxyRepository.buildSingleServerConfig(server), server.tag)
+                                        onSaveProfile(server)
                                         errorMessage = ""
                                         successMessage = "سرور به پروفایل‌های ذخیره‌شده اضافه شد."
                                     } catch (error: Exception) {
@@ -870,7 +944,7 @@ private fun ServersScreen(
                                 onClick = {
                                     selectServer(server.tag)
                                     try {
-                                        onConnect(FreeProxyRepository.buildSingleServerConfig(server), server.tag)
+                                        onConnect(server)
                                     } catch (error: Exception) {
                                         errorMessage = error.message ?: "ساخت تنظیمات سرور ناموفق بود."
                                     }
