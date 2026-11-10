@@ -112,8 +112,10 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
      stopSelf(startId)
      return@launch
     }
+    val verificationStartedAt=android.os.SystemClock.elapsedRealtime()
     val exitIp=verifyTunnelTraffic()
-    VpnRuntime.update(VpnStatus.CONNECTED,name,"تونل فعال است؛ عبور واقعی اینترنت تأیید شد.",exitIp)
+    val verificationLatencyMs=(android.os.SystemClock.elapsedRealtime()-verificationStartedAt).coerceAtLeast(1L)
+    VpnRuntime.update(VpnStatus.CONNECTED,name,"تونل فعال است؛ عبور واقعی اینترنت تأیید شد.",exitIp,tunnelLatencyMs=verificationLatencyMs)
     updateNotification("متصل • IP خروجی: $exitIp")
     Log.i(TAG,"Tunnel verified; exit IP=$exitIp")
    } catch(e:Throwable) {
