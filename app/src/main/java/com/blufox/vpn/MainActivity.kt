@@ -826,7 +826,7 @@ private fun ServersScreen(
                                         Text("HTTPS خروجی sing-box", color = Green, fontSize = 9.sp)
                                     }
                                     tunnelResult != null -> {
-                                        Text("تونل ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text("HTTPS خروجی ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                         Text(tunnelResult.error ?: "بدون پاسخ", color = Red, fontSize = 9.sp, maxLines = 2)
                                     }
                                     result == null -> Text("تست نشده", color = Muted, fontSize = 10.sp)
