@@ -421,7 +421,7 @@ private fun HomeScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard("IP خروجی VPN", vpnState.exitIp.ifBlank { "—" }, Icons.Outlined.Public, Modifier.weight(1f))
-                MetricCard("پینگ", "—", Icons.Outlined.CheckCircle, Modifier.weight(1f))
+                MetricCard("زمان آزمون HTTPS", vpnState.tunnelLatencyMs?.let { "${it} ms" } ?: "—", Icons.Outlined.CheckCircle, Modifier.weight(1f))
             }
         }
         item {
