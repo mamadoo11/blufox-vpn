@@ -41,8 +41,8 @@ data class ServerPingResult(
 
 data class TunnelProbePlan(
     val configJson: String,
-    val secret: String,
-    val tags: List<String>
+    val tags: List<String>,
+    val groupTags: List<String>
 )
 
 object FreeProxyRepository {
@@ -193,9 +193,20 @@ object FreeProxyRepository {
         )
     }
 
-    fun buildSingleServerConfig(server: FreeProxyServer): String {
-        val sourceConfig = latestSourceConfig
+    private fun requireFreshSourceConfig(): String {
+        val config = latestSourceConfig
             ?: throw IllegalStateException("ابتدا فهرست تازه سرورها را دریافت کن.")
+        val sourceInstant = runCatching { Instant.parse(lastUpdatedAt) }
+            .getOrElse { throw IllegalStateException("زمان به‌روزرسانی منبع معتبر نیست؛ سرورها فعال نمی‌شوند.", it) }
+        val ageSeconds = Duration.between(sourceInstant, Instant.now()).seconds
+        require(ageSeconds in -MAX_FUTURE_SKEW_SECONDS..MAX_SOURCE_AGE_SECONDS) {
+            "اعتبار منبع بیش از ۶۰ دقیقه قدیمی است؛ فهرست را دوباره به‌روزرسانی کن."
+        }
+        return config
+    }
+
+    fun buildSingleServerConfig(server: FreeProxyServer): String {
+        val sourceConfig = requireFreshSourceConfig()
         val root = JSONObject(sourceConfig)
         val inbounds = root.optJSONArray("inbounds") ?: JSONArray()
         val tun = (0 until inbounds.length())
@@ -258,14 +269,13 @@ object FreeProxyRepository {
 
 
     /**
-     * Builds one temporary TUN session containing the fresh candidate outbounds.
-     * The local-only Clash API then asks sing-box to probe each outbound directly.
+     * Builds a validated-source template for sequential, single-outbound Android TUN checks.
+     * The service substitutes one candidate tag at a time and closes each TUN before continuing.
      */
     fun buildTunnelProbePlan(servers: List<FreeProxyServer>): TunnelProbePlan {
         require(servers.isNotEmpty()) { "فهرست سرورها برای آزمایش خالی است." }
         require(servers.size <= MAX_SERVERS) { "تعداد سرورها از سقف مجاز بیشتر است." }
-        val sourceConfig = latestSourceConfig
-            ?: throw IllegalStateException("ابتدا فهرست تازه سرورها را دریافت کن.")
+        val sourceConfig = requireFreshSourceConfig()
         val root = JSONObject(sourceConfig)
         val originalOutbounds = root.optJSONArray("outbounds") ?: JSONArray()
         val sourceByTag = HashMap<String, JSONObject>()
@@ -298,7 +308,6 @@ object FreeProxyRepository {
             selectedOutbounds.add(outbound)
             tags.add(server.tag)
         }
-        val firstTag = tags.first()
         val outbounds = JSONArray()
         selectedOutbounds.forEach { outbounds.put(it) }
         retainedSystemOutbounds.distinctBy { it.optString("tag") }.forEach { outbounds.put(it) }
@@ -311,36 +320,7 @@ object FreeProxyRepository {
             ?: throw IllegalStateException("ورودی TUN در پروفایل منبع پیدا نشد.")
         root.put("inbounds", JSONArray().put(tun))
 
-        root.optJSONObject("dns")?.optJSONArray("servers")?.let { dnsServers ->
-            for (i in 0 until dnsServers.length()) {
-                val dnsServer = dnsServers.optJSONObject(i) ?: continue
-                if (dnsServer.optString("detour") in groupTags) dnsServer.put("detour", firstTag)
-            }
-        }
-
-        val route = root.optJSONObject("route") ?: JSONObject()
-        route.optJSONArray("rules")?.let { rules ->
-            for (i in 0 until rules.length()) {
-                val rule = rules.optJSONObject(i) ?: continue
-                if (rule.optString("outbound") in groupTags) rule.put("outbound", firstTag)
-            }
-        }
-        route.put("final", firstTag)
-        root.put("route", route)
-
-        val secretBytes = ByteArray(32)
-        java.security.SecureRandom().nextBytes(secretBytes)
-        val secret = secretBytes.joinToString("") { "%02x".format(it) }
-        val experimental = root.optJSONObject("experimental") ?: JSONObject()
-        experimental.put(
-            "clash_api",
-            JSONObject()
-                .put("external_controller", "127.0.0.1:9090")
-                .put("secret", secret)
-        )
-        root.put("experimental", experimental)
-
-        return TunnelProbePlan(root.toString(), secret, tags)
+        return TunnelProbePlan(root.toString(), tags, groupTags.toList())
     }
 
     private fun requireTrustedSourceUrl(raw: String): String {

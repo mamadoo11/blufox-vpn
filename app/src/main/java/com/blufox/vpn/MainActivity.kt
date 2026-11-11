@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
     private var pendingConfigJson: String? = null
     private var pendingServerName = ""
     private var pendingProbeTags: ArrayList<String>? = null
-    private var pendingProbeSecret = ""
+    private var pendingProbeGroupTags: ArrayList<String>? = null
 
     private val vpnPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -139,7 +139,7 @@ class MainActivity : ComponentActivity() {
         sourceUpdatedAt: String? = null
     ) {
         pendingProbeTags = null
-        pendingProbeSecret = ""
+        pendingProbeGroupTags = null
         runCatching {
             ProfileStore.save(
                 this,
@@ -200,7 +200,7 @@ class MainActivity : ComponentActivity() {
             pendingConfigJson = plan.configJson
             pendingServerName = "آزمایش واقعی سرورها"
             pendingProbeTags = ArrayList(plan.tags)
-            pendingProbeSecret = plan.secret
+            pendingProbeGroupTags = ArrayList(plan.groupTags)
             val permissionIntent = VpnService.prepare(this)
             if (permissionIntent != null) {
                 vpnPermissionLauncher.launch(permissionIntent)
@@ -215,18 +215,18 @@ class MainActivity : ComponentActivity() {
     private fun startPendingVpn() {
         val config = pendingConfigJson ?: return
         val probeTags = pendingProbeTags
-        val probeSecret = pendingProbeSecret
+        val probeGroupTags = pendingProbeGroupTags
         val intent = Intent(this, BluFoxVpnService::class.java).apply {
             action = if (probeTags != null) BluFoxVpnService.ACTION_TEST_SERVERS else BluFoxVpnService.ACTION_START
             putExtra(BluFoxVpnService.EXTRA_CONFIG, config)
             putExtra(BluFoxVpnService.EXTRA_NAME, pendingServerName)
             if (probeTags != null) {
                 putStringArrayListExtra(BluFoxVpnService.EXTRA_PROBE_TAGS, probeTags)
-                putExtra(BluFoxVpnService.EXTRA_PROBE_SECRET, probeSecret)
+                putStringArrayListExtra(BluFoxVpnService.EXTRA_PROBE_GROUP_TAGS, probeGroupTags ?: arrayListOf())
             }
         }
         pendingProbeTags = null
-        pendingProbeSecret = ""
+        pendingProbeGroupTags = null
         ContextCompat.startForegroundService(this, intent)
     }
 
@@ -779,10 +779,10 @@ private fun ServersScreen(
         ) {
             Text(
                 when {
-                    vpnState.status == VpnStatus.CONNECTING && vpnState.serverName == "آزمایش واقعی سرورها" -> "در حال آزمون HTTPS خروجی…"
+                    vpnState.status == VpnStatus.CONNECTING && vpnState.serverName == "آزمایش واقعی سرورها" -> "در حال آزمون HTTPS واقعی از TUN…"
                     vpnState.status == VpnStatus.CONNECTED -> "ابتدا اتصال VPN را قطع کن"
                     vpnState.status == VpnStatus.CONNECTING -> "در حال اتصال…"
-                    else -> "آزمون HTTPS خروجی همه سرورها با sing-box"
+                    else -> "آزمون HTTPS واقعی از Android TUN برای همه سرورها"
                 },
                 fontSize = 12.sp
             )
@@ -791,7 +791,7 @@ private fun ServersScreen(
         if (vpnState.probeCompletedAt > 0L && vpnState.probeResults.isNotEmpty()) {
             val passed = vpnState.probeResults.count { it.successful }
             Text(
-                "نتیجه آزمون HTTPS خروجی sing-box: " + passed + " از " + vpnState.probeResults.size + " outbound موفق • مرتب‌سازی بر اساس تأخیر HTTPS",
+                "نتیجه آزمون HTTPS واقعی از Android TUN: " + passed + " از " + vpnState.probeResults.size + " سرور موفق • مرتب‌سازی بر اساس زمان پاسخ HTTPS",
                 color = if (passed > 0) Green else Red,
                 fontSize = 11.sp
             )
@@ -818,7 +818,7 @@ private fun ServersScreen(
             Text(successMessage, color = Green, fontSize = 11.sp)
         }
         Text(
-            "Secure/Verified فقط برچسب منبع است. آزمون فعلی، HTTPS را از outbound هر سرور در sing-box می‌سنجد؛ عبور ترافیک برنامه از Android TUN برای تک‌تک سرورها هنوز تأیید نشده است. پینگ TCP به‌تنهایی اتصال VPN را ثابت نمی‌کند.",
+            "Secure/Verified فقط برچسب منبع است. در این آزمون هر سرور جداگانه با یک TUN فعال در Android VpnService راه‌اندازی می‌شود و یک درخواست HTTPS از داخل برنامه باید پاسخ IP معتبر بگیرد؛ سپس TUN بسته و سرور بعدی آزمایش می‌شود. پینگ TCP به‌تنهایی اتصال VPN را ثابت نمی‌کند.",
             color = Muted,
             fontSize = 10.sp
         )
@@ -897,10 +897,10 @@ private fun ServersScreen(
                                 when {
                                     tunnelResult?.successful == true -> {
                                         Text((tunnelResult.latencyMs ?: 0L).toString() + " ms", color = Green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text("HTTPS خروجی sing-box", color = Green, fontSize = 9.sp)
+                                        Text("HTTPS واقعی از TUN", color = Green, fontSize = 9.sp)
                                     }
                                     tunnelResult != null -> {
-                                        Text("HTTPS خروجی ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text("HTTPS از TUN ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                         Text(tunnelResult.error ?: "بدون پاسخ", color = Red, fontSize = 9.sp, maxLines = 2)
                                     }
                                     result == null -> Text("تست نشده", color = Muted, fontSize = 10.sp)

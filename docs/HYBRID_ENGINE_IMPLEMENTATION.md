@@ -8,7 +8,9 @@
 - VPN Gate results currently live only in the Servers screen's in-memory list.
 - The home screen shows the measured tunnel-verification duration and exit IP; upload/download counters remain unavailable and are explicitly shown as unavailable.
 - The normal single-server connection flow verifies HTTPS traffic through Android TUN before reporting CONNECTED.
-- The bulk candidate check currently creates one TUN session but uses the local Clash API delay endpoint to issue an HTTPS request from each sing-box outbound. This confirms outbound HTTPS reachability, not an app-originated request traversing Android TUN for every candidate. UI labels must keep this distinction explicit; do not call these results TUN-verified.
+- The bulk candidate check now tests candidates sequentially under the same Android VpnService owner. For each candidate, it builds a single-outbound config, validates it with libbox, starts one TUN session, and requires an app-originated HTTPS request to Cloudflare trace or ipify to return a valid IP value. The libbox service and TUN are closed before the next candidate starts, so candidate checks do not run multiple VPN services or TUNs concurrently.
+- The source timestamp is checked again when building a single-server connection or a bulk test plan, so a list that ages beyond 60 minutes cannot be used just because it was fetched earlier.
+- This is the implemented source-level behavior, not a claim of device validation. Confirm it on ARM64 Android over both mobile data and Wi-Fi before treating the results as production-verified.
 
 ## Target architecture
 
