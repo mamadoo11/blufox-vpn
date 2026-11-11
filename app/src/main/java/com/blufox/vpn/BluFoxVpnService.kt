@@ -78,32 +78,38 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
   probeTags:List<String> = emptyList(),
   probeGroupTags:List<String> = emptyList()
  ) {
-  operationJob?.cancel()
-  if(commandServer!=null)stopTunnel()
-  closing=false
-  VpnRuntime.update(
-   VpnStatus.CONNECTING,
-   name,
-   if(probeTags.isNotEmpty()) "در حال آماده‌سازی آزمون HTTPS واقعی از Android TUN برای " + probeTags.size + " سرور…" else "در حال راه‌اندازی موتور و تونل امن…",
-   probeResults=emptyList(),
-   probeCompletedAt=0L
-  )
-  operationJob=scope.launch {
+  // Serialize replacements: the previous libbox service must finish closing its TUN first.
+  val previousJob=operationJob
+  val newJob=scope.launch(start=CoroutineStart.LAZY) {
+   previousJob?.cancelAndJoin()
+   tearDownCore()
+   closing=false
+   val currentJob=currentCoroutineContext()[Job]
+   VpnRuntime.update(
+    VpnStatus.CONNECTING,
+    name,
+    if(probeTags.isNotEmpty()) "در حال آماده‌سازی آزمون HTTPS واقعی از Android TUN برای " + probeTags.size + " سرور…" else "در حال راه‌اندازی موتور و تونل امن…",
+    probeResults=emptyList(),
+    probeCompletedAt=0L
+   )
    try {
     setupLibbox(applicationContext)
     if(probeTags.isNotEmpty()) {
      val results=probeServersThroughTun(config,probeTags,probeGroupTags)
+     currentCoroutineContext().ensureActive()
      val passed=results.count{it.successful}
-     VpnRuntime.update(
-      VpnStatus.DISCONNECTED,
-      name,
-      "آزمون HTTPS واقعی از Android TUN پایان یافت: " + passed + " از " + results.size + " سرور موفق بود؛ هر سرور جداگانه و متوالی با TUN همان VpnService آزمایش شد.",
-      probeResults=results,
-      probeCompletedAt=System.currentTimeMillis()
-     )
-     updateNotification("آزمون واقعی TUN • " + passed + "/" + results.size)
-     stopForeground(STOP_FOREGROUND_REMOVE)
-     stopSelf(startId)
+     if(operationJob===currentJob) {
+      VpnRuntime.update(
+       VpnStatus.DISCONNECTED,
+       name,
+       "آزمون HTTPS واقعی از Android TUN پایان یافت: " + passed + " از " + results.size + " سرور موفق بود؛ هر سرور جداگانه و متوالی با TUN همان VpnService آزمایش شد.",
+       probeResults=results,
+       probeCompletedAt=System.currentTimeMillis()
+      )
+      updateNotification("آزمون واقعی TUN • " + passed + "/" + results.size)
+      stopForeground(STOP_FOREGROUND_REMOVE)
+      stopSelf(startId)
+     }
      return@launch
     }
     Libbox.checkConfig(config)
@@ -113,23 +119,33 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
     server.startOrReloadService(config,OverrideOptions())
     val verificationStartedAt=android.os.SystemClock.elapsedRealtime()
     val exitIp=verifyTunnelTraffic()
+    currentCoroutineContext().ensureActive()
     val verificationLatencyMs=(android.os.SystemClock.elapsedRealtime()-verificationStartedAt).coerceAtLeast(1L)
-    VpnRuntime.update(VpnStatus.CONNECTED,name,"تونل فعال است؛ عبور واقعی اینترنت تأیید شد.",exitIp,tunnelLatencyMs=verificationLatencyMs)
-    updateNotification("متصل • IP خروجی: $exitIp")
-    Log.i(TAG,"Tunnel verified; exit IP=$exitIp")
+    if(operationJob===currentJob) {
+     VpnRuntime.update(VpnStatus.CONNECTED,name,"تونل فعال است؛ عبور واقعی اینترنت تأیید شد.",exitIp,tunnelLatencyMs=verificationLatencyMs)
+     updateNotification("متصل • IP خروجی: $exitIp")
+     Log.i(TAG,"Tunnel verified; exit IP=$exitIp")
+    }
    } catch(cancelled:CancellationException) {
     tearDownCore()
-    VpnRuntime.update(VpnStatus.DISCONNECTED,name,"عملیات متوقف شد.")
-    stopForeground(STOP_FOREGROUND_REMOVE)
-    stopSelf(startId)
+    if(operationJob===currentJob) {
+     VpnRuntime.update(VpnStatus.DISCONNECTED,name,"عملیات متوقف شد.")
+     stopForeground(STOP_FOREGROUND_REMOVE)
+     stopSelf(startId)
+    }
    } catch(e:Throwable) {
     Log.e(TAG,"VPN start failed",e)
     tearDownCore()
-    VpnRuntime.update(VpnStatus.ERROR,name,e.message?: "اتصال برقرار نشد.")
-    stopForeground(STOP_FOREGROUND_REMOVE)
-    stopSelf(startId)
+    if(operationJob===currentJob) {
+     VpnRuntime.update(VpnStatus.ERROR,name,e.message?: "اتصال برقرار نشد.")
+     stopForeground(STOP_FOREGROUND_REMOVE)
+     stopSelf(startId)
+    }
    }
   }
+  operationJob=newJob
+  previousJob?.cancel()
+  newJob.start()
  }
 
  private suspend fun probeServersThroughTun(
@@ -278,7 +294,6 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
 
  private fun stopTunnel() {
   operationJob?.cancel()
-  operationJob=null
   tearDownCore()
   VpnRuntime.update(VpnStatus.DISCONNECTED,message="اتصال قطع شد.")
   stopForeground(STOP_FOREGROUND_REMOVE)
