@@ -239,8 +239,15 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
   return root.toString()
  }
 
+ private fun shortFailure(error:Throwable):String {
+  val detail=(error.cause?.message?:error.message?:error.javaClass.simpleName)
+   .replace(Regex("\\s+")," ").take(100)
+  return (error.javaClass.simpleName + if(detail.isBlank()) "" else ": "+detail).take(140)
+ }
+
  private fun verifyCandidateTunnelTraffic():String {
   var lastError:Throwable?=null
+  val failures=mutableListOf<String>()
   try {
    val trace=requestText("https://www.cloudflare.com/cdn-cgi/trace",7000)
    val ip=trace.lineSequence().firstOrNull{it.startsWith("ip=")}?.substringAfter("=")?.trim()
@@ -248,6 +255,7 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
    return ip
   } catch(error:Exception) {
    lastError=error
+   failures.add("Cloudflare: "+shortFailure(error))
   }
   try {
    val ip=requestText("https://api.ipify.org",7000).trim()
@@ -255,26 +263,35 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
    return ip
   } catch(error:Exception) {
    lastError=error
+   failures.add("IPify: "+shortFailure(error))
   }
-  throw IllegalStateException("درخواست HTTPS از داخل Android TUN تأیید نشد.",lastError)
+  throw IllegalStateException("درخواست HTTPS از داخل Android TUN تأیید نشد • "+failures.joinToString(" • "),lastError)
  }
 
  private fun verifyTunnelTraffic():String {
   var lastError:Throwable?=null
-  repeat(3) { attempt ->
+  val failures=mutableListOf<String>()
+  repeat(2) { attempt ->
    try {
-    val trace=requestText("https://www.cloudflare.com/cdn-cgi/trace")
+    val trace=requestText("https://www.cloudflare.com/cdn-cgi/trace",8000)
     val ip=trace.lineSequence().firstOrNull{it.startsWith("ip=")}?.substringAfter("=")?.trim()
-    if(!ip.isNullOrBlank())return ip
-    val fallback=requestText("https://api.ipify.org").trim()
-    require(fallback.matches(Regex("[0-9a-fA-F:.]{3,45}"))){"پاسخ IP خروجی معتبر نیست."}
-    return fallback
-   } catch(error:Throwable) {
+    require(!ip.isNullOrBlank() && ip.matches(Regex("[0-9a-fA-F:.]{3,45}"))){"Cloudflare trace پاسخ IP معتبر نداد."}
+    return ip
+   } catch(error:Exception) {
     lastError=error
-    if(attempt<2)Thread.sleep(2500)
+    failures.add("Cloudflare: "+shortFailure(error))
    }
+   try {
+    val ip=requestText("https://api.ipify.org",8000).trim()
+    require(ip.matches(Regex("[0-9a-fA-F:.]{3,45}"))){"پاسخ IP خروجی معتبر نیست."}
+    return ip
+   } catch(error:Exception) {
+    lastError=error
+    failures.add("IPify: "+shortFailure(error))
+   }
+   if(attempt<1)Thread.sleep(1000)
   }
-  throw IllegalStateException("اتصال تونل شروع شد، اما عبور واقعی اینترنت تأیید نشد. ممکن است سرور عمومی از دسترس خارج شده باشد.",lastError)
+  throw IllegalStateException("تونل شروع شد، اما عبور واقعی اینترنت تأیید نشد • "+failures.takeLast(4).joinToString(" • "),lastError)
  }
 
  private fun requestText(address:String,timeoutMs:Int=12000):String {
