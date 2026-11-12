@@ -2,7 +2,7 @@ package com.blufox.vpn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 enum class VpnStatus { DISCONNECTED, CONNECTING, CONNECTED, ERROR }
-data class TunnelProbeResult(val tag:String,val latencyMs:Long?,val error:String?=null) {
+data class TunnelProbeResult(val tag:String,val latencyMs:Long?,val error:String?=null,val exitIp:String?=null) {
  val successful:Boolean get()=latencyMs!=null
 }
 data class VpnUiState(

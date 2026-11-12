@@ -898,6 +898,7 @@ private fun ServersScreen(
                                     tunnelResult?.successful == true -> {
                                         Text((tunnelResult.latencyMs ?: 0L).toString() + " ms", color = Green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                         Text("HTTPS واقعی از TUN", color = Green, fontSize = 9.sp)
+                                        tunnelResult.exitIp?.let { Text("IP خروجی: $it", color = Muted, fontSize = 9.sp, maxLines = 1) }
                                     }
                                     tunnelResult != null -> {
                                         Text("HTTPS از TUN ناموفق", color = Red, fontWeight = FontWeight.Bold, fontSize = 11.sp)

@@ -174,7 +174,7 @@ class BluFoxVpnService:VpnService(),PlatformInterface,CommandServerHandler {
     val exitIp=verifyCandidateTunnelTraffic()
     currentCoroutineContext().ensureActive()
     val latencyMs=(android.os.SystemClock.elapsedRealtime()-verificationStartedAt).coerceAtLeast(1L)
-    results.add(TunnelProbeResult(tag,latencyMs,null))
+    results.add(TunnelProbeResult(tag,latencyMs,null,exitIp))
     Log.i(TAG,"Per-server Android TUN HTTPS verified; tag=$tag exitIp=$exitIp latencyMs=$latencyMs")
    } catch(cancelled:CancellationException) {
     throw cancelled
